@@ -1,0 +1,15 @@
+Build the Lead It Builders Budget & Bidding Dashboard from scratch. The full spec is in `bb_dashboard_build_brief.md` in this repo — read it first end-to-end, then build.
+
+Before doing anything else, run `/plugins` to see which skills are installed and load the ones called out in §0 of the brief. The high-value ones for this build: engineering:system-design (start), engineering:architecture (for the lowest-bid automation ADR), engineering:testing-strategy (for the automation tests), engineering:deploy-checklist (before vercel deploy), engineering:documentation (README), design:design-system (CSS variable + token wiring), design:design-handoff (component spec from the mockup HTMLs), design:accessibility-review (Portfolio Matrix a11y pass), productivity:memory-management (carry workspace + list IDs across sessions). If a skill isn't installed, skip it — don't ask the user to install.
+
+Stack is locked: Next.js 14 App Router on Vercel, Tailwind, shadcn/ui, ClickUp REST API direct via a typed client (port from labs-cloud/LIB-Plans-Permit-Dashboard if portable), env var CLICKUP_API_TOKEN, polling at 60s + tab-focus, read-only writes EXCEPT the lowest-bid → Updated Budget automation (§6 of the brief — that one writes back via ClickUp API).
+
+Build views in priority order: (1) Portfolio Bidding Matrix landing page, (2) Per-Project Bid Grid drill-down, (3) Coordinator Worklist if time allows. Pixel-match the HTML mockups bb_portfolio_matrix_v2.html and bb_per_project_grid_v2.html that live alongside this brief — colors, density, copy, and behavior. Light theme by default with a single sun/moon toggle button top-right that flips data-theme on <html> and persists in localStorage.
+
+Use the 9 canonical Bidding statuses verbatim (Not Started / RFP Sent / Followed Up / Bid Received / Leveling / Leveled - Pending Review / Needs Rebid / No Bid / Declined / Awarded) and the canonical 66-trade list — both in the brief. Hardcode the status pill colors per §7; do not pull them from CSS variables.
+
+The lowest-bid automation (§6): every refresh, for each Trade, write MIN(eligible Bid/Contracted Amount) to the parent Budget task's `Updated Budget` field (Awarded bid wins over MIN if both exist). Also expose a Vercel cron at /api/budget/refresh that runs it across all projects every 5 minutes. Never overwrite `Budget Allocated`.
+
+Reference docs: ClickUp SOP at https://leadit.clickup.com/9017603275/v/dc/8cqvd6b-305837 (authoritative for statuses/fields/workflow), Notion design page at https://www.notion.so/35f31e50091a814181c1cf0e823719c0 (design history + decisions), Notion SOP at https://www.notion.so/35e31e50091a8141b073fed29d642ca8 (the workflow this dashboard reads).
+
+Definition of done is the checklist in §10 of the brief. Ship to lib-budget-bidding-dashboard.vercel.app.
