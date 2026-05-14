@@ -10,6 +10,7 @@ import {
   findField,
   postTaskComment,
   setCustomField,
+  tradeKey,
 } from './client';
 
 export interface ResolvedBid {
@@ -76,24 +77,18 @@ function byUpdatedDesc(a: BiddingTask, b: BiddingTask): number {
 export function computeUpdatedBudgets(
   snapshot: ProjectSnapshot
 ): Array<AutomationResult & { newValue: number | null }> {
-  const bidsByBudgetId = new Map<string, BiddingTask[]>();
+  // Bids join to Budget tasks by trade name (separate ClickUp lists).
   const bidsByTrade = new Map<string, BiddingTask[]>();
   for (const bid of snapshot.biddingTasks) {
-    if (bid.parentBudgetTaskId) {
-      const arr = bidsByBudgetId.get(bid.parentBudgetTaskId) ?? [];
-      arr.push(bid);
-      bidsByBudgetId.set(bid.parentBudgetTaskId, arr);
-    }
-    if (bid.trade) {
-      const arr = bidsByTrade.get(bid.trade) ?? [];
-      arr.push(bid);
-      bidsByTrade.set(bid.trade, arr);
-    }
+    if (!bid.trade) continue;
+    const key = tradeKey(bid.trade);
+    const arr = bidsByTrade.get(key) ?? [];
+    arr.push(bid);
+    bidsByTrade.set(key, arr);
   }
 
   return snapshot.budgetTasks.map((bt) => {
-    const children =
-      bidsByBudgetId.get(bt.id) ?? bidsByTrade.get(bt.trade) ?? [];
+    const children = bidsByTrade.get(tradeKey(bt.trade)) ?? [];
 
     // §6.6: Set Trade Types skip the bidding loop entirely.
     if (bt.tradeType === 'Set') {
@@ -218,12 +213,12 @@ export function projectRollup(snapshot: ProjectSnapshot): ProjectRollup {
     0
   );
   const biddable = snapshot.budgetTasks.filter((b) => b.tradeType === 'Biddable');
-  const awardedBudgetIds = new Set(
+  const awardedTradeKeys = new Set(
     snapshot.biddingTasks
-      .filter((b) => b.status === 'Awarded' && b.parentBudgetTaskId)
-      .map((b) => b.parentBudgetTaskId as string)
+      .filter((b) => b.status === 'Awarded' && b.trade)
+      .map((b) => tradeKey(b.trade as string))
   );
-  const awardedCount = biddable.filter((b) => awardedBudgetIds.has(b.id)).length;
+  const awardedCount = biddable.filter((b) => awardedTradeKeys.has(tradeKey(b.trade))).length;
   return {
     estimated,
     updated,

@@ -4,21 +4,19 @@ import {
   projectRollup,
   resolveWinningBid,
 } from './budgetAutomation';
-import {
-  BiddingTask,
-  BudgetTask,
-  ProjectSnapshot,
-} from './types';
+import { BiddingTask, BudgetTask, ProjectSnapshot } from './types';
 
 function bid(partial: Partial<BiddingTask>): BiddingTask {
   return {
     id: 'b1',
     url: 'https://app.clickup.com/t/b1',
-    parentBudgetTaskId: 'bt1',
+    tradeGroupId: 'tg1',
     trade: 'HVAC',
     subcontractor: 'Acme',
+    subcontractorUrl: null,
     bidAmount: 100,
     status: 'Bid Received',
+    statusDerived: false,
     dateUpdated: '1700000000000',
     awardDate: null,
     followedUp: null,
@@ -40,7 +38,7 @@ function budget(partial: Partial<BudgetTask>): BudgetTask {
     costType: 'Soft',
     budgetAllocated: 1000,
     updatedBudget: null,
-    budgetStatus: 'Open for Bidding',
+    budgetStatus: 'open for bidding',
     projectFolder: 'P',
     projectFolderId: 'f1',
     listId: 'l1',
@@ -54,6 +52,7 @@ function snapshot(budgetTasks: BudgetTask[], biddingTasks: BiddingTask[]): Proje
     folderName: 'P',
     budgetTasks,
     biddingTasks,
+    tradeGroups: [],
   };
 }
 
@@ -133,9 +132,8 @@ describe('computeUpdatedBudgets', () => {
       ])
     )[0];
     expect(before.newValue).toBe(200);
-    expect(before.source).toBe('no_change'); // already matches
+    expect(before.source).toBe('no_change');
 
-    // Now award is reversed → no Awarded; lowest = 300 (200 dropped).
     const after = computeUpdatedBudgets(
       snapshot([bt], [
         bid({ id: 'a', bidAmount: 300, status: 'Leveling' }),
@@ -156,15 +154,23 @@ describe('computeUpdatedBudgets', () => {
     expect(r.source).toBe('no_change');
   });
 
-  it('matches bids by parent budget task ID first, then by trade name', () => {
+  it('joins bids to budget tasks by trade name across the two lists', () => {
     const bt = budget({ id: 'BT', trade: 'HVAC', updatedBudget: null });
     const r = computeUpdatedBudgets(
       snapshot(
         [bt],
-        [bid({ id: 'x', parentBudgetTaskId: null, trade: 'HVAC', bidAmount: 50, status: 'Bid Received' })]
+        [bid({ id: 'x', tradeGroupId: 'tgZ', trade: 'HVAC', bidAmount: 50, status: 'Bid Received' })]
       )
     )[0];
     expect(r.newValue).toBe(50);
+  });
+
+  it('joins on trade name case/whitespace-insensitively', () => {
+    const bt = budget({ id: 'BT', trade: 'Live Security', updatedBudget: null });
+    const r = computeUpdatedBudgets(
+      snapshot([bt], [bid({ trade: '  live security ', bidAmount: 8800, status: 'Awarded' })])
+    )[0];
+    expect(r.newValue).toBe(8800);
   });
 });
 
@@ -176,8 +182,8 @@ describe('projectRollup', () => {
       budget({ id: '3', trade: 'Windows', tradeType: 'Set', budgetAllocated: 200 }),
     ];
     const bids = [
-      bid({ id: 'a', parentBudgetTaskId: '1', trade: 'HVAC', bidAmount: 900, status: 'Awarded' }),
-      bid({ id: 'b', parentBudgetTaskId: '2', trade: 'Roofing', bidAmount: 480, status: 'Leveling' }),
+      bid({ id: 'a', trade: 'HVAC', bidAmount: 900, status: 'Awarded' }),
+      bid({ id: 'b', trade: 'Roofing', bidAmount: 480, status: 'Leveling' }),
     ];
     const rollup = projectRollup(snapshot(bts, bids));
     expect(rollup.estimated).toBe(1700);

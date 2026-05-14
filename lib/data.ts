@@ -5,6 +5,25 @@ import type { ProjectSnapshot } from './clickup/types';
 const ACTIVE_PROJECTS_SPACE_ID =
   process.env.CLICKUP_ACTIVE_PROJECTS_SPACE_ID ?? '90173230172';
 
+/** Run an async mapper over items with a bounded concurrency (ClickUp rate limits). */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor;
+      cursor += 1;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export interface PortfolioData {
   snapshots: ProjectSnapshot[];
   source: 'live' | 'mock';
@@ -25,7 +44,7 @@ export async function loadPortfolio(): Promise<PortfolioData> {
   try {
     const folders = await listSpaceFolders(ACTIVE_PROJECTS_SPACE_ID);
     const master = await loadMasterProjectNames();
-    const snapshots = await Promise.all(folders.map((f) => loadProject(f.id)));
+    const snapshots = await mapWithConcurrency(folders, 6, (f) => loadProject(f.id));
     if (master.size > 0) {
       for (const s of snapshots) {
         if (!master.has(s.folderName.trim())) {

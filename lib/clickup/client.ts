@@ -4,7 +4,11 @@ import {
   CUCustomField,
   BudgetTask,
   BiddingTask,
+  TradeBiddingGroup,
   ProjectSnapshot,
+  BiddingStatus,
+  TradeTypeValue,
+  ALL_TRADES,
   BUDGET_FIELDS,
   BIDDING_FIELDS,
   costTypeForTrade,
@@ -107,6 +111,22 @@ export function findField(task: CUTask, name: string): CUCustomField | undefined
   return task.custom_fields.find((f) => f.name === name);
 }
 
+/**
+ * Find a field by name, preferring a specific ClickUp field type. The live
+ * `01. Budget` list has two fields literally named "Trade"; we want the
+ * drop_down one, not the other.
+ */
+export function findFieldByType(
+  task: CUTask,
+  name: string,
+  type: string
+): CUCustomField | undefined {
+  return (
+    task.custom_fields.find((f) => f.name === name && f.type === type) ??
+    task.custom_fields.find((f) => f.name === name)
+  );
+}
+
 export function readNumberField(task: CUTask, name: string): number | null {
   const f = findField(task, name);
   if (!f || f.value == null || f.value === '') return null;
@@ -126,10 +146,11 @@ export function readDateField(task: CUTask, name: string): string | null {
   return String(f.value);
 }
 
-// Dropdown values come back as either { id } referencing the option, or the
-// option index, or the option name. Normalize to the option name.
+// Dropdown values come back as either { id } referencing the option, the
+// option orderindex (most common in this workspace), or the option name.
+// Normalize to the option name. Prefers a drop_down-typed field on name clash.
 export function readDropdownField(task: CUTask, name: string): string | null {
-  const f = findField(task, name);
+  const f = findFieldByType(task, name, 'drop_down');
   if (!f || f.value == null || f.value === '') return null;
   const options: any[] = f.type_config?.options ?? [];
   let optionRef: any = f.value;
@@ -178,10 +199,42 @@ export async function postTaskComment(taskId: string, text: string): Promise<voi
 }
 
 // ---------- Domain shaping ----------
+//
+// Live ClickUp contract (verified against the workspace):
+//  - `01. Budget` holds one Trade task per trade as a top-level task
+//    (parent == null). It also contains unrelated subtasks we ignore.
+//  - `02. Bidding` holds one trade-group task per trade (parent == null) and
+//    one bid subtask per subcontractor (parent == <trade-group id>).
+//  - Bids join to Budget tasks by trade NAME — they live in different lists
+//    with no shared parent.
 
 function findListId(folder: CUFolder, namePrefix: string): string | null {
   const list = folder.lists?.find((l) => l.name.toLowerCase().startsWith(namePrefix));
   return list?.id ?? null;
+}
+
+/** Normalize a trade name for joining (trim, collapse whitespace, lowercase). */
+export function tradeKey(trade: string): string {
+  return trade.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+const CANONICAL_TRADE_KEYS = new Set(ALL_TRADES.map(tradeKey));
+
+/**
+ * Resolve a task's trade name, or `null` if it isn't a real trade task. The
+ * live lists contain orphan bid tasks and junk ("Send out job for pricing",
+ * subcontractor names) at the top level — those have neither a `Trade`
+ * dropdown nor `Trade List` text and don't match a canonical trade, so they
+ * are excluded rather than shown as bogus trade rows.
+ */
+function resolveTrade(task: CUTask): string | null {
+  const dropdown = readDropdownField(task, BUDGET_FIELDS.Trade);
+  if (dropdown && dropdown.trim()) return dropdown.trim();
+  const listText = readTextField(task, BUDGET_FIELDS.TradeList);
+  if (listText && listText.trim()) return listText.trim();
+  const name = task.name?.trim();
+  if (name && CANONICAL_TRADE_KEYS.has(tradeKey(name))) return name;
+  return null;
 }
 
 export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
@@ -194,41 +247,74 @@ export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
     biddingListId ? listTasks(biddingListId) : Promise.resolve<CUTask[]>([]),
   ]);
 
-  const budgetTasks: BudgetTask[] = budgetRaw.map((t) =>
-    shapeBudgetTask(t, folder.name, folder.id)
+  // Budget tasks: top-level only (parent == null) AND a resolvable trade.
+  const budgetTasks: BudgetTask[] = budgetRaw
+    .filter((t) => t.parent == null)
+    .map((t) => shapeBudgetTask(t, folder.name, folder.id))
+    .filter((bt): bt is BudgetTask => bt !== null);
+
+  // Bidding: trade-group tasks are parent == null; bids are their children.
+  const tradeGroupTasks = biddingRaw.filter((t) => t.parent == null);
+  const groupTradeById = new Map<string, string | null>(
+    tradeGroupTasks.map((t) => [t.id, resolveTrade(t)])
   );
-  const biddingTasks: BiddingTask[] = biddingRaw.map((t) =>
-    shapeBiddingTask(t, folder.name, folder.id, budgetTasks)
-  );
+  const tradeGroups: TradeBiddingGroup[] = tradeGroupTasks
+    .map((t): TradeBiddingGroup | null => {
+      const trade = groupTradeById.get(t.id) ?? null;
+      if (!trade) return null;
+      return {
+        id: t.id,
+        trade,
+        status: normalizeBiddingStatus(t.status?.status) ?? 'Not Started',
+        projectFolderId: folder.id,
+      };
+    })
+    .filter((g): g is TradeBiddingGroup => g !== null);
+
+  const biddingTasks: BiddingTask[] = biddingRaw
+    // A bid is a direct child of a top-level trade-group task. Deeper
+    // sub-subtasks (change orders etc.) are skipped.
+    .filter((t) => t.parent != null && groupTradeById.has(t.parent))
+    .map((t) => shapeBiddingTask(t, folder.name, folder.id, groupTradeById));
 
   return {
     folderId: folder.id,
     folderName: folder.name,
     budgetTasks,
     biddingTasks,
+    tradeGroups,
   };
+}
+
+function normalizeTradeType(raw: string | null): TradeTypeValue | null {
+  if (!raw) return null;
+  const v = raw.trim().toLowerCase();
+  if (v === 'biddable') return 'Biddable';
+  if (v === 'set') return 'Set';
+  if (v === 'n/a' || v === 'na') return 'N/A';
+  return null;
 }
 
 export function shapeBudgetTask(
   task: CUTask,
   folderName: string,
   folderId: string
-): BudgetTask {
-  const trade = readDropdownField(task, BUDGET_FIELDS.Trades) ?? task.name;
-  const tradeType = readDropdownField(task, BUDGET_FIELDS.TradeType);
+): BudgetTask | null {
+  const trade = resolveTrade(task);
+  if (!trade) return null;
+  const costRaw = readDropdownField(task, BUDGET_FIELDS.CostType);
+  const costType: 'Hard' | 'Soft' =
+    costRaw === 'Hard Costs'
+      ? 'Hard'
+      : costRaw === 'Soft Costs'
+        ? 'Soft'
+        : costTypeForTrade(trade);
   return {
     id: task.id,
     url: task.url ?? `https://app.clickup.com/t/${task.id}`,
     trade,
-    tradeType: tradeType === 'Set' || tradeType === 'Biddable' ? tradeType : null,
-    costType:
-      (readDropdownField(task, BUDGET_FIELDS.CostType) as 'Hard Costs' | 'Soft Costs' | null) ===
-      'Hard Costs'
-        ? 'Hard'
-        : (readDropdownField(task, BUDGET_FIELDS.CostType) as 'Hard Costs' | 'Soft Costs' | null) ===
-            'Soft Costs'
-          ? 'Soft'
-          : costTypeForTrade(trade),
+    tradeType: normalizeTradeType(readDropdownField(task, BUDGET_FIELDS.TradeType)),
+    costType,
     budgetAllocated: readNumberField(task, BUDGET_FIELDS.BudgetAllocated),
     updatedBudget: readNumberField(task, BUDGET_FIELDS.UpdatedBudget),
     budgetStatus: task.status?.status ?? '',
@@ -238,35 +324,69 @@ export function shapeBudgetTask(
   };
 }
 
+/**
+ * Read the subcontractor name + ClickUp URL from the `Subcontractor`
+ * list_relationship field, falling back to the `1. Subcontractors` labels
+ * field and finally the task name.
+ */
+function readSubcontractor(task: CUTask): { name: string; url: string | null } {
+  const rel = findField(task, BIDDING_FIELDS.Subcontractor);
+  if (rel && Array.isArray(rel.value) && rel.value.length > 0) {
+    const first = rel.value[0];
+    if (first && typeof first === 'object' && first.name) {
+      return { name: String(first.name), url: first.url ?? null };
+    }
+  }
+  const labels = readLabelsField(task, BUDGET_FIELDS.Subcontractors);
+  if (labels.length > 0) return { name: labels[0], url: null };
+  return { name: task.name, url: null };
+}
+
+/**
+ * Derive the 9-stage bidding status for a bid subtask. The live workspace
+ * does not drive the workflow status (every bid sits at "Not Started"), so we
+ * fall back to explicit signals: an Award Date means Awarded, a real bid
+ * amount means Bid Received. If the workflow status IS meaningful we trust it.
+ */
+function deriveBidStatus(
+  task: CUTask,
+  awardDate: string | null,
+  bidAmount: number | null
+): { status: BiddingStatus; derived: boolean } {
+  const workflow = normalizeBiddingStatus(task.status?.status);
+  if (workflow && workflow !== 'Not Started') {
+    return { status: workflow, derived: false };
+  }
+  if (awardDate) return { status: 'Awarded', derived: true };
+  if (bidAmount != null && bidAmount > 0) return { status: 'Bid Received', derived: true };
+  return { status: 'Not Started', derived: true };
+}
+
 export function shapeBiddingTask(
   task: CUTask,
   folderName: string,
   folderId: string,
-  budgetTasks: BudgetTask[]
+  groupTradeById: Map<string, string | null>
 ): BiddingTask {
-  const status = normalizeBiddingStatus(task.status?.status) ?? 'Not Started';
-  // Match parent Budget task by `parent`, else fall back to trade name.
-  const parentId = task.parent ?? null;
-  let trade: string | null = null;
-  if (parentId) {
-    trade = budgetTasks.find((b) => b.id === parentId)?.trade ?? null;
-  }
-  if (!trade) {
-    // Try the bidding task's own Trades dropdown (some workspaces tag it).
-    trade = readDropdownField(task, BUDGET_FIELDS.Trades);
-  }
-  const subLabels = readLabelsField(task, BIDDING_FIELDS.Subcontractor);
-  const subcontractor = subLabels[0] ?? readTextField(task, BIDDING_FIELDS.Subcontractor) ?? task.name;
+  const groupTrade = task.parent ? groupTradeById.get(task.parent) ?? null : null;
+  const trade =
+    readDropdownField(task, BIDDING_FIELDS.Trade) ?? groupTrade ?? null;
+  const sub = readSubcontractor(task);
+  const bidAmount = readNumberField(task, BIDDING_FIELDS.BidContractedAmount);
+  const awardDate = readDateField(task, BIDDING_FIELDS.AwardDate);
+  const { status, derived } = deriveBidStatus(task, awardDate, bidAmount);
   return {
     id: task.id,
     url: task.url ?? `https://app.clickup.com/t/${task.id}`,
-    parentBudgetTaskId: parentId,
+    tradeGroupId: task.parent ?? null,
     trade,
-    subcontractor,
-    bidAmount: readNumberField(task, BIDDING_FIELDS.BidContractedAmount),
+    subcontractor: sub.name,
+    subcontractorUrl: sub.url,
+    bidAmount,
     status,
-    dateUpdated: task.date_updated ?? readDateField(task, BIDDING_FIELDS.DateUpdated),
-    awardDate: readDateField(task, BIDDING_FIELDS.AwardDate),
+    statusDerived: derived,
+    dateUpdated: readDateField(task, BIDDING_FIELDS.DateUpdated) ?? task.date_updated ?? null,
+    awardDate,
     followedUp: readDateField(task, BIDDING_FIELDS.FollowedUp),
     link: readTextField(task, BIDDING_FIELDS.Link),
     projectFolder: folderName,
