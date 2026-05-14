@@ -8,6 +8,7 @@ import { RefreshOnFocus } from '@/components/RefreshOnFocus';
 import { EmbedClass } from '@/components/EmbedClass';
 import { loadProjectSnapshot } from '@/lib/data';
 import { computeUpdatedBudgets, projectRollup } from '@/lib/clickup/budgetAutomation';
+import { tradeKey } from '@/lib/clickup/client';
 import { fmtUsd, fmtUsdSigned, fmtPct, classifyDelta } from '@/lib/formatting';
 import { BiddingTask, BudgetTask } from '@/lib/clickup/types';
 import { MOCK_PROJECTS } from '@/lib/clickup/mockData';
@@ -39,14 +40,16 @@ export default async function ProjectPage({ params, searchParams }: PageProps) {
     rows.sort((a, b) => (a.trade === tradeFocus ? -1 : b.trade === tradeFocus ? 1 : 0));
   }
 
-  // Group bids by parent budget task.
-  const bidsByBudget = new Map<string, BiddingTask[]>();
+  // Group bids by trade name (bids and budget tasks live in separate lists).
+  const bidsByTrade = new Map<string, BiddingTask[]>();
   for (const b of snapshot.biddingTasks) {
-    if (!b.parentBudgetTaskId) continue;
-    const list = bidsByBudget.get(b.parentBudgetTaskId) ?? [];
+    if (!b.trade) continue;
+    const key = tradeKey(b.trade);
+    const list = bidsByTrade.get(key) ?? [];
     list.push(b);
-    bidsByBudget.set(b.parentBudgetTaskId, list);
+    bidsByTrade.set(key, list);
   }
+  const bidsFor = (bt: BudgetTask) => bidsByTrade.get(tradeKey(bt.trade)) ?? [];
 
   // Per-row counts for the totals footer.
   const inFlightStatuses = new Set(['RFP Sent', 'Followed Up', 'Bid Received', 'Leveling']);
@@ -54,7 +57,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps) {
   let inFlightRows = 0;
   let needingReview = 0;
   for (const bt of snapshot.budgetTasks) {
-    const bids = bidsByBudget.get(bt.id) ?? [];
+    const bids = bidsFor(bt);
     if (bids.some((b) => b.status === 'Awarded')) awardedRows += 1;
     else if (bids.some((b) => inFlightStatuses.has(b.status))) inFlightRows += 1;
     if (bids.some((b) => b.status === 'Leveled - Pending Review')) needingReview += 1;
@@ -143,7 +146,7 @@ export default async function ProjectPage({ params, searchParams }: PageProps) {
                 <BidRow
                   key={bt.id}
                   bt={bt}
-                  bids={bidsByBudget.get(bt.id) ?? []}
+                  bids={bidsFor(bt)}
                   updatedFromAutomation={
                     automation.find((a) => a.budgetTaskId === bt.id)?.nextUpdated ?? bt.updatedBudget
                   }

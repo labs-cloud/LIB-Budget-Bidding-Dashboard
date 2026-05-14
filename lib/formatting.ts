@@ -51,13 +51,21 @@ export function subInitials(name: string): string {
     .toUpperCase();
 }
 
-/** Short project nickname for matrix column headers (≤7 chars). */
+/**
+ * Short project label for matrix column headers. Drops a leading run of
+ * street-number tokens, keeps the meaningful remainder, caps length. The full
+ * folder name should always be kept in a `title`/tooltip.
+ *   "1931-1935 Bedford"     → "Bedford"
+ *   "1925 Grand Concourse"  → "Grand Concourse"
+ *   "1035 & 1039 42nd St"   → "42nd St"
+ *   "1 OLD 3930 Carp"       → "OLD 3930 Carp"
+ */
 export function shortProjectName(name: string): string {
-  // "800 Brady Ave" → "Brady", "1035 & 1039 42nd St" → "42nd", "Hoe Ave" → "Hoe"
-  // Heuristic: drop leading numbers/symbols, take first word.
-  const stripped = name.replace(/^[\d&\s\/\.\-]+/, '');
-  const firstWord = stripped.split(/\s+/)[0] ?? name;
-  return firstWord.slice(0, 7);
+  const tokens = name.trim().split(/\s+/);
+  let i = 0;
+  while (i < tokens.length - 1 && /^[\d&,\/.\-]+$/.test(tokens[i])) i += 1;
+  const rest = tokens.slice(i).join(' ') || name;
+  return rest.length > 18 ? `${rest.slice(0, 17)}…` : rest;
 }
 
 /**

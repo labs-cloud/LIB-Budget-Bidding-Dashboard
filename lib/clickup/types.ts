@@ -74,6 +74,7 @@ export const INELIGIBLE_BID_STATUSES: BiddingStatus[] = [
 ];
 
 export type TradeCostType = 'Hard' | 'Soft';
+export type TradeTypeValue = 'Biddable' | 'Set' | 'N/A';
 
 // Canonical Trades list (§11). Cost categorization preserved verbatim.
 export const SOFT_TRADES = [
@@ -154,26 +155,29 @@ export function costTypeForTrade(trade: string): TradeCostType {
   return (HARD_TRADES as readonly string[]).includes(trade) ? 'Hard' : 'Soft';
 }
 
-// Custom field NAMES we look up by name on each task. (We resolve to IDs
-// dynamically off the live ClickUp response — robust against ID drift.)
+// Custom field NAMES — verbatim from the live ClickUp workspace (verified
+// against GET /list/{id}/task). We resolve option IDs dynamically off each
+// task's type_config, so this only needs the names right.
 export const BUDGET_FIELDS = {
-  Trades: 'Trades',
-  TradeType: 'Trade Type',
+  Trade: 'Trade',
+  TradeList: 'Trade List',
+  TradeType: '2. Trade Type',
   CostType: 'Cost Type',
-  BudgetAllocated: 'Budget Allocated',
+  BudgetAllocated: '💲 Budget Allocated',
   UpdatedBudget: 'Updated Budget',
-  Subcontractors: 'Subcontractors',
-  StartOfBiddingDate: 'Start of Bidding Date',
+  Subcontractors: '1. Subcontractors',
+  StartBiddingDate: 'Start Bidding Date',
   ProjectID: 'Project ID',
 } as const;
 
 export const BIDDING_FIELDS = {
+  Trade: 'Trade',
+  TradeList: 'Trade List',
   BidContractedAmount: 'Bid/Contracted Amount',
-  BudgetAllocated: 'Budget Allocated',
   DateUpdated: 'Date Updated',
   FollowedUp: 'Followed-Up',
   AwardDate: 'Award Date',
-  Link: 'Link',
+  Link: '🔗 Link',
   Subcontractor: 'Subcontractor',
 } as const;
 
@@ -199,6 +203,7 @@ export interface CUTask {
   folder?: { id: string; name?: string };
   space?: { id: string };
   parent?: string | null;
+  top_level_parent?: string | null;
   url?: string;
   custom_fields: CUCustomField[];
 }
@@ -221,7 +226,7 @@ export interface BudgetTask {
   id: string;
   url: string;
   trade: string;
-  tradeType: 'Biddable' | 'Set' | null;
+  tradeType: TradeTypeValue | null;
   costType: TradeCostType;
   budgetAllocated: number | null;
   updatedBudget: number | null;
@@ -231,14 +236,23 @@ export interface BudgetTask {
   listId: string;
 }
 
+/**
+ * A single subcontractor bid — a subtask in `02. Bidding` whose parent is a
+ * trade-group task. Joins to a BudgetTask by `trade` (different lists, no
+ * shared parent).
+ */
 export interface BiddingTask {
   id: string;
   url: string;
-  parentBudgetTaskId: string | null;
+  tradeGroupId: string | null;
   trade: string | null;
   subcontractor: string;
+  subcontractorUrl: string | null;
   bidAmount: number | null;
+  /** 9-stage status: real workflow status if meaningful, else derived from signals. */
   status: BiddingStatus;
+  /** Whether `status` came from explicit workflow status vs. derived from Award Date / amount. */
+  statusDerived: boolean;
   dateUpdated: string | null;
   awardDate: string | null;
   followedUp: string | null;
@@ -249,9 +263,18 @@ export interface BiddingTask {
   orderindex: string;
 }
 
+/** A per-trade grouping task in `02. Bidding` (parent == null). Carries the trade-level status. */
+export interface TradeBiddingGroup {
+  id: string;
+  trade: string;
+  status: BiddingStatus;
+  projectFolderId: string;
+}
+
 export interface ProjectSnapshot {
   folderId: string;
   folderName: string;
   budgetTasks: BudgetTask[];
   biddingTasks: BiddingTask[];
+  tradeGroups: TradeBiddingGroup[];
 }

@@ -4,6 +4,7 @@ import {
   BudgetTask,
   CODE_STATUS,
   ProjectSnapshot,
+  TradeBiddingGroup,
   costTypeForTrade,
 } from './types';
 
@@ -126,22 +127,27 @@ function makeMockSnapshot(project: MockProject, grid: MockBidRow[]): ProjectSnap
   }));
 
   const biddingTasks: BiddingTask[] = [];
+  const tradeGroups: TradeBiddingGroup[] = [];
   let bidIdx = 0;
   for (let i = 0; i < grid.length; i += 1) {
     const row = grid[i];
-    const parent = budgetTasks[i];
+    const groupId = `${project.folderId}-tg-${i}`;
+    const rowStatuses: BiddingStatus[] = [];
     for (const sub of row.subs) {
       if (!sub || !sub[0]) continue;
       const [name, amount, code, isLowest] = sub as [string, number | null, string, boolean];
       const status: BiddingStatus = CODE_STATUS[code] ?? 'Not Started';
+      rowStatuses.push(status);
       biddingTasks.push({
         id: `${project.folderId}-b-${bidIdx}`,
         url: `https://app.clickup.com/t/${project.folderId}-b-${bidIdx}`,
-        parentBudgetTaskId: parent.id,
+        tradeGroupId: groupId,
         trade: row.trade,
         subcontractor: name,
+        subcontractorUrl: null,
         bidAmount: amount,
         status,
+        statusDerived: false,
         dateUpdated: String(Date.now() - (bidIdx % 30) * 86_400_000),
         awardDate: status === 'Awarded' ? String(Date.now() - 86_400_000 * 5) : null,
         followedUp: null,
@@ -154,12 +160,19 @@ function makeMockSnapshot(project: MockProject, grid: MockBidRow[]): ProjectSnap
       bidIdx += 1;
       void isLowest; // computed dynamically from automation
     }
+    tradeGroups.push({
+      id: groupId,
+      trade: row.trade,
+      status: rowStatuses[0] ?? 'Not Started',
+      projectFolderId: project.folderId,
+    });
   }
   return {
     folderId: project.folderId,
     folderName: project.folderName,
     budgetTasks,
     biddingTasks,
+    tradeGroups,
   };
 }
 
