@@ -142,22 +142,30 @@ export function buildPortfolioMatrix(snapshots: ProjectSnapshot[]): PortfolioMat
   // Keep only rows that have at least one real status somewhere.
   const filteredRows = rows.filter((r) => r.cells.some((c) => c.code !== '—'));
 
-  // KPIs
+  // KPIs — counted from the resolved (project, trade) cell statuses so they
+  // reflect trade-group statuses, not just individual bid subtasks.
   let inFlight = 0;
   let awaitingFollowUp = 0;
-  let overdueFollowUp = 0;
   let readyToAward = 0;
+  for (const r of rows) {
+    for (const c of r.cells) {
+      if (!c.status) continue;
+      if (IN_FLIGHT.includes(c.status)) inFlight += 1;
+      if (c.status === 'RFP Sent') awaitingFollowUp += 1;
+      if (c.status === 'Leveled - Pending Review') readyToAward += 1;
+    }
+  }
+
+  // Overdue follow-ups: bids/efforts sitting in RFP Sent for >5 days.
+  let overdueFollowUp = 0;
   let tradeTypePending = 0;
   const pendingProjects = new Set<string>();
   for (const s of snapshots) {
     for (const b of s.biddingTasks) {
-      if (IN_FLIGHT.includes(b.status)) inFlight += 1;
       if (b.status === 'RFP Sent') {
-        awaitingFollowUp += 1;
         const days = daysSince(b.dateUpdated);
         if (days != null && days > 5) overdueFollowUp += 1;
       }
-      if (b.status === 'Leveled - Pending Review') readyToAward += 1;
     }
     for (const bt of s.budgetTasks) {
       if (bt.tradeType == null) {

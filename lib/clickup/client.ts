@@ -8,6 +8,7 @@ import {
   ProjectSnapshot,
   BiddingStatus,
   TradeTypeValue,
+  ALL_TRADES,
   BUDGET_FIELDS,
   BIDDING_FIELDS,
   costTypeForTrade,
@@ -217,12 +218,23 @@ export function tradeKey(trade: string): string {
   return trade.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
-function resolveTrade(task: CUTask): string {
-  return (
-    readDropdownField(task, BUDGET_FIELDS.Trade) ??
-    readTextField(task, BUDGET_FIELDS.TradeList) ??
-    task.name
-  ).trim();
+const CANONICAL_TRADE_KEYS = new Set(ALL_TRADES.map(tradeKey));
+
+/**
+ * Resolve a task's trade name, or `null` if it isn't a real trade task. The
+ * live lists contain orphan bid tasks and junk ("Send out job for pricing",
+ * subcontractor names) at the top level — those have neither a `Trade`
+ * dropdown nor `Trade List` text and don't match a canonical trade, so they
+ * are excluded rather than shown as bogus trade rows.
+ */
+function resolveTrade(task: CUTask): string | null {
+  const dropdown = readDropdownField(task, BUDGET_FIELDS.Trade);
+  if (dropdown && dropdown.trim()) return dropdown.trim();
+  const listText = readTextField(task, BUDGET_FIELDS.TradeList);
+  if (listText && listText.trim()) return listText.trim();
+  const name = task.name?.trim();
+  if (name && CANONICAL_TRADE_KEYS.has(tradeKey(name))) return name;
+  return null;
 }
 
 export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
@@ -235,26 +247,35 @@ export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
     biddingListId ? listTasks(biddingListId) : Promise.resolve<CUTask[]>([]),
   ]);
 
-  // Budget tasks: top-level only (parent == null).
+  // Budget tasks: top-level only (parent == null) AND a resolvable trade.
   const budgetTasks: BudgetTask[] = budgetRaw
     .filter((t) => t.parent == null)
-    .map((t) => shapeBudgetTask(t, folder.name, folder.id));
+    .map((t) => shapeBudgetTask(t, folder.name, folder.id))
+    .filter((bt): bt is BudgetTask => bt !== null);
 
-  // Bidding: split trade-group tasks (parent == null) from bid subtasks.
+  // Bidding: trade-group tasks are parent == null; bids are their children.
   const tradeGroupTasks = biddingRaw.filter((t) => t.parent == null);
-  const tradeGroups: TradeBiddingGroup[] = tradeGroupTasks.map((t) => ({
-    id: t.id,
-    trade: resolveTrade(t),
-    status: normalizeBiddingStatus(t.status?.status) ?? 'Not Started',
-    projectFolderId: folder.id,
-  }));
-  const groupById = new Map(tradeGroups.map((g) => [g.id, g]));
+  const groupTradeById = new Map<string, string | null>(
+    tradeGroupTasks.map((t) => [t.id, resolveTrade(t)])
+  );
+  const tradeGroups: TradeBiddingGroup[] = tradeGroupTasks
+    .map((t): TradeBiddingGroup | null => {
+      const trade = groupTradeById.get(t.id) ?? null;
+      if (!trade) return null;
+      return {
+        id: t.id,
+        trade,
+        status: normalizeBiddingStatus(t.status?.status) ?? 'Not Started',
+        projectFolderId: folder.id,
+      };
+    })
+    .filter((g): g is TradeBiddingGroup => g !== null);
 
   const biddingTasks: BiddingTask[] = biddingRaw
-    // A bid is a direct child of a trade-group task. Deeper sub-subtasks
-    // (change orders etc.) are skipped.
-    .filter((t) => t.parent != null && groupById.has(t.parent))
-    .map((t) => shapeBiddingTask(t, folder.name, folder.id, groupById));
+    // A bid is a direct child of a top-level trade-group task. Deeper
+    // sub-subtasks (change orders etc.) are skipped.
+    .filter((t) => t.parent != null && groupTradeById.has(t.parent))
+    .map((t) => shapeBiddingTask(t, folder.name, folder.id, groupTradeById));
 
   return {
     folderId: folder.id,
@@ -278,8 +299,9 @@ export function shapeBudgetTask(
   task: CUTask,
   folderName: string,
   folderId: string
-): BudgetTask {
+): BudgetTask | null {
   const trade = resolveTrade(task);
+  if (!trade) return null;
   const costRaw = readDropdownField(task, BUDGET_FIELDS.CostType);
   const costType: 'Hard' | 'Soft' =
     costRaw === 'Hard Costs'
@@ -344,11 +366,11 @@ export function shapeBiddingTask(
   task: CUTask,
   folderName: string,
   folderId: string,
-  groupById: Map<string, TradeBiddingGroup>
+  groupTradeById: Map<string, string | null>
 ): BiddingTask {
-  const group = task.parent ? groupById.get(task.parent) : undefined;
+  const groupTrade = task.parent ? groupTradeById.get(task.parent) ?? null : null;
   const trade =
-    readDropdownField(task, BIDDING_FIELDS.Trade) ?? group?.trade ?? null;
+    readDropdownField(task, BIDDING_FIELDS.Trade) ?? groupTrade ?? null;
   const sub = readSubcontractor(task);
   const bidAmount = readNumberField(task, BIDDING_FIELDS.BidContractedAmount);
   const awardDate = readDateField(task, BIDDING_FIELDS.AwardDate);
