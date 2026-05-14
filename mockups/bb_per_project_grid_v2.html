@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>B&B Per-Project Bid Grid v2 — 800 Brady Ave</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/3.0.0/tabler-icons.min.css">
+<style>
+:root {
+  --bg-page: #f1efe8;
+  --bg-frame: #ffffff;
+  --bg-card: #f7f7f5;
+  --bg-row-alt: #fbfaf7;
+  --text-primary: #1a1a1a;
+  --text-secondary: #5f5e5a;
+  --text-tertiary: #888780;
+  --border-tertiary: rgba(0,0,0,0.10);
+  --border-secondary: rgba(0,0,0,0.25);
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --color-over: #fceaea;
+  --color-over-text: #791f1f;
+  --color-under: #eaf3de;
+  --color-under-text: #27500a;
+}
+[data-theme="dark"] {
+  --bg-page: #0d0d0c;
+  --bg-frame: #1a1a1a;
+  --bg-card: #2c2c2a;
+  --bg-row-alt: #232321;
+  --text-primary: #f1efe8;
+  --text-secondary: #b4b2a9;
+  --text-tertiary: #888780;
+  --border-tertiary: rgba(255,255,255,0.10);
+  --border-secondary: rgba(255,255,255,0.25);
+  --color-over: #4a1b0c;
+  --color-over-text: #f5c4b3;
+  --color-under: #173404;
+  --color-under-text: #c0dd97;
+}
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", system-ui, sans-serif; color: var(--text-primary); background: var(--bg-page); margin: 0; padding: 32px; font-size: 14px; line-height: 1.5; transition: background 0.2s ease, color 0.2s ease; }
+.frame { max-width: 1100px; margin: 0 auto; background: var(--bg-frame); padding: 28px 32px; border-radius: 16px; border: 0.5px solid var(--border-tertiary); transition: background 0.2s ease, border-color 0.2s ease; }
+h2 { font-size: 18px; font-weight: 500; margin: 0; }
+button { font-family: inherit; cursor: pointer; }
+.toggle-btn { padding: 6px 12px; border-radius: var(--radius-md); border: 0.5px solid var(--border-secondary); background: transparent; color: var(--text-primary); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; transition: background 0.15s ease; }
+.toggle-btn:hover { background: var(--bg-card); }
+.kpi { background: var(--bg-card); border-radius: var(--radius-md); padding: 12px 14px; }
+.kpi-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+.kpi-value { font-size: 20px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+.kpi-sub { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+.chip { padding: 4px 10px; border-radius: var(--radius-md); border: 0.5px solid var(--border-tertiary); background: transparent; color: var(--text-primary); font-size: 12px; }
+.chip.active { border-color: var(--border-secondary); background: var(--bg-card); }
+.grid-wrap { overflow-x: auto; border: 0.5px solid var(--border-tertiary); border-radius: var(--radius-lg); }
+table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 960px; }
+thead th { text-align: left; padding: 10px 10px; font-weight: 500; color: var(--text-secondary); background: var(--bg-card); border-bottom: 0.5px solid var(--border-tertiary); white-space: nowrap; }
+th.sticky, td.sticky { position: sticky; left: 0; z-index: 1; border-right: 0.5px solid var(--border-tertiary); }
+th.sticky { background: var(--bg-card); min-width: 160px; }
+tbody tr { border-bottom: 0.5px solid var(--border-tertiary); }
+tbody td { padding: 8px 8px; vertical-align: middle; background: var(--bg-frame); }
+td.sticky { background: var(--bg-frame); padding: 10px 12px; border-left: 3px solid transparent; }
+.cost-hard { border-left-color: #d85a30 !important; }
+.cost-soft { border-left-color: #ffc53d !important; }
+.trade-name { font-weight: 500; font-size: 12px; }
+.trade-cost { font-size: 9px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
+.bid-card { padding: 5px 7px; border-radius: var(--radius-md); background: var(--bg-frame); border: 0.5px solid var(--border-tertiary); }
+.bid-card.lowest { box-shadow: 0 0 0 1.5px #186221; }
+.bid-head { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; min-width: 0; }
+.bid-amt { font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.bid-foot { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; color: white; font-size: 8px; font-weight: 500; flex-shrink: 0; }
+.sub-name { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.status-pill { display: inline-flex; align-items: center; justify-content: center; padding: 1px 5px; border-radius: 3px; font-size: 8px; font-weight: 500; flex-shrink: 0; }
+.txt-num { text-align: right; font-variant-numeric: tabular-nums; }
+.txt-num.lg { font-size: 13px; font-weight: 500; }
+.txt-num.md { font-size: 12px; }
+.txt-num.muted { color: var(--text-secondary); }
+.auto-flag { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; color: var(--text-tertiary); margin-top: 2px; }
+.delta-chip { display: inline-block; padding: 3px 7px; border-radius: 4px; font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; border: 0.5px solid var(--border-tertiary); color: var(--text-secondary); }
+.delta-chip.over { background: var(--color-over); color: var(--color-over-text); border: none; }
+.delta-chip.under { background: var(--color-under); color: var(--color-under-text); border: none; }
+tfoot td { background: var(--bg-card); padding: 12px 10px; font-weight: 500; border-top: 0.5px solid var(--border-secondary); }
+.legend { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 12px; font-size: 10px; color: var(--text-secondary); align-items: center; }
+.foot { margin-top: 16px; padding-top: 14px; border-top: 0.5px solid var(--border-tertiary); font-size: 11px; color: var(--text-tertiary); }
+.dim { color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 12px;">
+    <div style="width: 44px; height: 44px; border-radius: var(--radius-md); background: #ab4aba; color: white; display: flex; align-items: center; justify-content: center; font-weight: 500; font-size: 15px;">BR</div>
+    <div style="flex: 1;">
+      <h2>800 Brady Ave</h2>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: var(--text-secondary);">Bronx, NY 10462 · 56 trades · 14 awarded · Updated Budget auto-refreshed 12 min ago</p>
+    </div>
+    <button class="toggle-btn" id="theme-toggle" aria-label="Toggle theme"><i class="ti ti-moon" id="theme-icon" aria-hidden="true"></i><span id="theme-label">Dark</span></button>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 1.25rem;">
+    <div class="kpi">
+      <div class="kpi-label">Budget Allocated (estimate)</div>
+      <div class="kpi-value">$13.68M</div>
+      <div class="kpi-sub">sum of original estimates</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Updated Budget (live)</div>
+      <div class="kpi-value" style="color: #186221;">$13.86M</div>
+      <div class="kpi-sub">sum of lowest non-disqualified bids</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Award Δ</div>
+      <div class="kpi-value" style="color: #993c1d;">+$0.18M</div>
+      <div class="kpi-sub">2 trades over 10%</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Coverage</div>
+      <div class="kpi-value">56%</div>
+      <div class="kpi-sub">14 of 25 biddable</div>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; align-items: center;">
+    <span style="color: var(--text-secondary); margin-right: 4px;">View:</span>
+    <button class="chip active">All trades · 56</button>
+    <button class="chip">Awarded only</button>
+    <button class="chip">Open bids</button>
+    <button class="chip">Over budget</button>
+  </div>
+
+  <div class="grid-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="sticky">Trade</th>
+          <th>Sub 1</th>
+          <th>Sub 2</th>
+          <th>Sub 3</th>
+          <th>Sub 4</th>
+          <th class="txt-num">Updated Budget <i class="ti ti-bolt" style="font-size: 11px; vertical-align: -1px; color: #186221;" aria-hidden="true"></i></th>
+          <th class="txt-num">Budget Allocated</th>
+          <th class="txt-num">Δ</th>
+        </tr>
+      </thead>
+      <tbody id="grid-body"></tbody>
+      <tfoot>
+        <tr>
+          <td class="sticky">Project totals</td>
+          <td colspan="3" style="color: var(--text-tertiary); font-size: 10px; font-weight: 400;">14 trades awarded · 8 in flight · 3 needing review</td>
+          <td class="txt-num"><span style="color: #186221;">$13.86M</span></td>
+          <td class="txt-num"><span class="muted">$13.68M</span></td>
+          <td class="txt-num"><span style="color: #993c1d;">+$182k</span></td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="legend">
+    <span><span style="display:inline-block;width:4px;height:14px;background:#d85a30;border-radius:2px;vertical-align:-3px;"></span> Hard cost</span>
+    <span><span style="display:inline-block;width:4px;height:14px;background:#ffc53d;border-radius:2px;vertical-align:-3px;"></span> Soft cost</span>
+    <span><span style="display:inline-block;width:14px;height:14px;border:1.5px solid #186221;border-radius:4px;vertical-align:-3px;"></span> Lowest non-rejected bid (drives Updated Budget)</span>
+    <span><i class="ti ti-bolt" style="font-size:12px;color:#186221;" aria-hidden="true"></i> Updated Budget = automation output</span>
+  </div>
+
+  <div class="foot">Source: <a href="https://leadit.clickup.com/9017603275/v/dc/8cqvd6b-305837" style="color: inherit;">ClickUp B&amp;B SOP</a> · statuses verbatim from <code>02. Bidding</code>. <strong>Updated Budget</strong> is auto-computed: if any bid is <code>Awarded</code> that wins; otherwise the lowest non-disqualified <code>Bid/Contracted Amount</code>; falls back to Budget Allocated when no eligible bids. See SOP §11.</div>
+</div>
+
+<script>
+(function() {
+  document.getElementById('theme-toggle').addEventListener('click', function() {
+    var root = document.documentElement;
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    document.getElementById('theme-icon').className = 'ti ti-' + (next === 'dark' ? 'sun' : 'moon');
+    document.getElementById('theme-label').textContent = next === 'dark' ? 'Light' : 'Dark';
+  });
+
+  var SUB_COLORS = ['#ab4aba','#0091ff','#30a46c','#d85a30','#534ab7','#12a594','#993c1d','#ffc53d','#a18072','#3b6d11'];
+  function subAvatar(name) {
+    if (!name) return '';
+    var initials = name.split(/\s+/).map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();
+    var h = 0; for (var i = 0; i < name.length; i++) h += name.charCodeAt(i);
+    var color = SUB_COLORS[h % SUB_COLORS.length];
+    return '<span class="avatar" style="background:' + color + ';">' + initials + '</span>';
+  }
+  var STATUS = {
+    AW: { bg: '#30a46c', fg: 'white', name: 'Awarded' },
+    LV: { bg: '#186221', fg: 'white', name: 'Leveling' },
+    LP: { bg: '#aacdab', fg: '#173404', name: 'Leveled - Pending Review' },
+    BR: { bg: '#12a594', fg: 'white', name: 'Bid Received' },
+    RS: { bg: '#0091ff', fg: 'white', name: 'RFP Sent' },
+    FU: { bg: '#ab4aba', fg: 'white', name: 'Followed Up' },
+    NR: { bg: '#ffc53d', fg: '#633806', name: 'Needs Rebid' },
+    NS: { bg: '#a18072', fg: 'white', name: 'Not Started' },
+    ND: { bg: '#e5484d', fg: 'white', name: 'No Bid / Declined' }
+  };
+  function fmt(n) {
+    if (n == null) return '—';
+    if (n >= 1000000) return '$' + (n/1000000).toFixed(2) + 'M';
+    if (n >= 1000) return '$' + Math.round(n/1000) + 'k';
+    return '$' + n;
+  }
+  function deltaChip(updated, budget) {
+    if (updated == null || budget == null || budget === 0) return '<span class="dim">—</span>';
+    var d = updated - budget;
+    var pct = d / budget;
+    var sign = d >= 0 ? '+' : '−';
+    var text = sign + fmt(Math.abs(d));
+    var cls = 'delta-chip';
+    if (pct > 0.10) cls += ' over';
+    else if (pct < -0.05) cls += ' under';
+    return '<span class="' + cls + '">' + text + '</span>';
+  }
+  function subCell(sub) {
+    if (!sub || !sub[0]) return '<td></td>';
+    var name = sub[0], amount = sub[1], status = sub[2], isLowest = sub[3];
+    var s = STATUS[status];
+    var ring = isLowest ? ' lowest' : '';
+    var amtStr = amount != null ? fmt(amount) : '<span class="dim">no bid</span>';
+    return '<td><div class="bid-card' + ring + '">' +
+      '<div class="bid-head">' + subAvatar(name) + '<span class="sub-name" title="' + name + '">' + name + '</span></div>' +
+      '<div class="bid-foot"><span class="bid-amt">' + amtStr + '</span>' +
+      '<span class="status-pill" title="' + s.name + '" style="background:' + s.bg + ';color:' + s.fg + ';">' + status + '</span></div>' +
+      '</div></td>';
+  }
+  var rows = [
+    { trade: 'SOE & Foundation & Superstructure', cost: 'soft', budget: 600000, updated: 3030000, auto: true,
+      subs: [['Prime', 3030000, 'AW', true], ['Elite Concrete', null, 'RS', false], ['Edge', null, 'RS', false], ['Greystone', null, 'RS', false]] },
+    { trade: 'Live Security', cost: 'soft', budget: 17000, updated: 8800, auto: true,
+      subs: [['City Wide', 8800, 'AW', true], ['Monitex', 14050, 'ND', false], [null], [null]] },
+    { trade: 'Construction Fence', cost: 'soft', budget: 28000, updated: 15950, auto: true,
+      subs: [['AFS Fencing', null, 'ND', false], ['QSF Fencing', 15950, 'AW', true], [null], [null]] },
+    { trade: 'Windows', cost: 'soft', budget: 275000, updated: 325000, auto: true,
+      subs: [['Silhouette', null, 'BR', false], ['Windows NYC', null, 'BR', false], ['Slate', 325000, 'AW', true], [null]] },
+    { trade: 'Roofing', cost: 'soft', budget: 195000, updated: 257609, auto: true,
+      subs: [['Pinnacle', 257609, 'AW', true], ['Master Roofing', null, 'ND', false], [null], [null]] },
+    { trade: 'Stucco', cost: 'soft', budget: 570000, updated: 600212, auto: true,
+      subs: [['Pinnacle', 600212, 'AW', true], ['Master Roofing', null, 'ND', false], ['AC Drywall', null, 'ND', false], [null]] },
+    { trade: 'HVAC', cost: 'soft', budget: 225000, updated: 204000, auto: true,
+      subs: [['Reliable Air', 238800, 'LP', false], ['Breezco', null, 'LP', false], ['Chill Master', 204000, 'AW', true], ['VS Cooling', null, 'ND', false]] },
+    { trade: 'PTAC Units', cost: 'hard', budget: 350000, updated: 302991, auto: true,
+      subs: [['Signature', null, 'LP', false], ['Home Trade', null, 'LP', false], ['Reliable Air', 302991, 'AW', true], [null]] },
+    { trade: 'Electrical', cost: 'soft', budget: 990000, updated: 920000, auto: true,
+      subs: [['Brooklyn Power', 920000, 'AW', true], ['Power Direct', null, 'ND', false], ['MR Electrical', null, 'ND', false], [null]] },
+    { trade: 'Fire Alarm', cost: 'soft', budget: 42000, updated: 93450, auto: true,
+      subs: [['MR Fire Alarm', 96300, 'LP', false], ['Be Secure', 93450, 'AW', true], ['Blue Sky', null, 'ND', false], [null]] },
+    { trade: 'Tile Installation', cost: 'hard', budget: 385000, updated: 428289, auto: true,
+      subs: [['City Tiles', 428289, 'AW', true], ['ABF Tile', null, 'ND', false], ['Greater Tiles', 429665, 'ND', false], [null]] },
+    { trade: 'Plumbing Fixtures Bathtubs', cost: 'hard', budget: 144000, updated: 125659, auto: true,
+      subs: [['Bluetub', 136932, 'ND', false], ['Bathana', 125659, 'AW', true], [null], [null]] },
+    { trade: 'Elevator', cost: 'hard', budget: 590000, updated: 578000, auto: true,
+      subs: [['Millennium Elev', 578000, 'AW', true], ['Skyline Elev', 641598, 'ND', false], ['Liftrex', 600000, 'ND', false], [null]] },
+    { trade: 'Rubbish Removal', cost: 'hard', budget: 255000, updated: 261176, auto: true,
+      subs: [['Rush Rubbish', 261176, 'AW', true], ['Best Super', 262000, 'ND', false], ['Touch Up', 345000, 'ND', false], [null]] }
+  ];
+  var tbody = document.getElementById('grid-body');
+  var html = '';
+  rows.forEach(function(r) {
+    html += '<tr>';
+    html += '<td class="sticky cost-' + r.cost + '"><div class="trade-name">' + r.trade + '</div><div class="trade-cost">' + (r.cost === 'hard' ? 'Hard cost' : 'Soft cost') + '</div></td>';
+    for (var i = 0; i < 4; i++) html += subCell(r.subs[i]);
+    var autoFlag = r.auto ? '<div class="auto-flag"><i class="ti ti-bolt" style="font-size:10px;color:#186221;" aria-hidden="true"></i>auto</div>' : '';
+    html += '<td class="txt-num"><div class="txt-num lg">' + fmt(r.updated) + '</div>' + autoFlag + '</td>';
+    html += '<td class="txt-num"><span class="txt-num md muted">' + fmt(r.budget) + '</span></td>';
+    html += '<td class="txt-num">' + deltaChip(r.updated, r.budget) + '</td>';
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+})();
+</script>
+</body>
+</html>
