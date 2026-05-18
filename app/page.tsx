@@ -34,7 +34,15 @@ export default async function Page({ searchParams }: PageProps) {
               {matrix.projects.length} active projects · {data.source === 'live' ? 'live from ClickUp' : 'mock data (set CLICKUP_API_TOKEN)'} · refreshed {refreshedSec}s ago
             </p>
           </div>
-          <ThemeToggle />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="matrix-toptabs">
+              <button type="button" className="active" aria-current="page">
+                Portfolio
+              </button>
+              <Link href="/matrix">Matrix</Link>
+            </div>
+            <ThemeToggle />
+          </div>
         </div>
 
         {data.warnings.length > 0 ? (
