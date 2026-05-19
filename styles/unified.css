@@ -92,6 +92,10 @@ html[data-theme='dark'] .unified-app {
   background: var(--color-background-primary);
   border: 0.5px solid var(--color-border-tertiary);
   border-radius: var(--border-radius-lg);
+  /* Guard against any child (matrix, gantt, etc.) trying to push the frame
+     past its declared width — child scroll containers handle their own
+     horizontal overflow instead. */
+  overflow-x: hidden;
 }
 .unified-app.embed { padding: 0; }
 .unified-app.embed .frame { border: 0; border-radius: 0; padding: 1rem; max-width: none; }
@@ -248,8 +252,13 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
 .unified-app .kpi.neutral .s { color: var(--color-text-secondary); }
 
 /* Portfolio matrix view */
-.unified-app .body-wrap { display: grid; grid-template-columns: 1.7fr 1fr; gap: 14px; }
-.unified-app .panel-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 16px 18px; }
+/* minmax(0, …) lets grid items shrink below content size so the inner
+   .matrix-scroll can take over horizontal overflow instead of expanding the
+   grid track past the frame. */
+.unified-app .body-wrap { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px; }
+.unified-app .panel-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 16px 18px; min-width: 0; }
+.unified-app .gantt-card,
+.unified-app .table-card { min-width: 0; }
 .unified-app .panel-card .h { font-size: 13px; font-weight: 500; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
 .unified-app .panel-card .h .meta { margin-left: auto; font-size: 11px; color: var(--color-text-tertiary); font-weight: 400; }
 .unified-app .panel-card .h .meta a { color: var(--color-text-info); cursor: pointer; }

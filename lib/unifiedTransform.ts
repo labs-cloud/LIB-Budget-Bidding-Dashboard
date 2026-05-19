@@ -265,13 +265,32 @@ export function buildUnifiedPortfolio(input: {
   refreshedAt: number;
   warnings: string[];
 }): UnifiedPortfolio {
-  const { snapshots, source, refreshedAt, warnings } = input;
+  const { snapshots: allSnapshots, source, refreshedAt, warnings } = input;
+
+  // Filter to projects with actual bidding/budget activity. The active-projects
+  // ClickUp space contains every folder ever spun up (~42 today), most of
+  // which have no bids and no allocated budgets — including them blows up the
+  // matrix horizontally and pumps "Trade Type pending" into the thousands.
+  const snapshots = allSnapshots.filter((s) =>
+    s.biddingTasks.length > 0
+    || s.budgetTasks.some((b) => (b.budgetAllocated ?? 0) > 0)
+  );
 
   // Project columns — alphabetical by full folder name.
   const projects = snapshots
     .slice()
     .sort((a, b) => a.folderName.localeCompare(b.folderName))
     .map((s) => ({ folderId: s.folderId, short: shortProjectName(s.folderName), full: s.folderName }));
+
+  // Disambiguate duplicate short labels (e.g. two "Tillotson" folders) by
+  // prepending the leading street-number tokens from the original name.
+  const shortCounts = new Map<string, number>();
+  for (const p of projects) shortCounts.set(p.short, (shortCounts.get(p.short) ?? 0) + 1);
+  for (const p of projects) {
+    if ((shortCounts.get(p.short) ?? 0) <= 1) continue;
+    const num = p.full.match(/^[\d&,\-/]+/)?.[0]?.trim();
+    p.short = num ? `${num} ${p.short}` : p.full;
+  }
 
   // Build union of trade rows (canonical order, then extras alpha).
   const seenTrades = new Map<string, string>();
@@ -345,10 +364,12 @@ export function buildUnifiedPortfolio(input: {
   const pendingProjects = new Set<string>();
   for (const s of snapshots) {
     for (const bt of s.budgetTasks) {
-      if (bt.tradeType == null) {
-        tradeTypePending += 1;
-        pendingProjects.add(s.folderId);
-      }
+      if (bt.tradeType != null) continue;
+      // Skip placeholder budget tasks that have no allocation yet — they're
+      // shells the SOP creates before a project enters bidding.
+      if ((bt.budgetAllocated ?? 0) <= 0) continue;
+      tradeTypePending += 1;
+      pendingProjects.add(s.folderId);
     }
   }
 
