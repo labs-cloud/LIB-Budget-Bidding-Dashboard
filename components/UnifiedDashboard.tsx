@@ -383,8 +383,12 @@ function PortfolioGantt({ data }: { data: UnifiedPortfolio }) {
         <div />
         <div className="ax-track">
           {data.ganttAxis.ticks.map((t, i) => (
+            // The "today" tick gets its label from the .ax-tick.today::after
+            // pseudo ("TODAY") — emitting t.label as text too would stack
+            // "TODAY" on top of the date and produce an unreadable overlap
+            // (especially obvious when today falls near a regular tick date).
             <span key={i} className={`ax-tick${t.today ? ' today' : ''}`} style={{ left: `${t.left}%` }}>
-              {t.label}
+              {t.today ? '' : t.label}
             </span>
           ))}
         </div>
