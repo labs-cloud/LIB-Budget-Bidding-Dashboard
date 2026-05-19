@@ -52,23 +52,6 @@ export function subInitials(name: string): string {
 }
 
 /**
- * Short project label for matrix column headers. Drops a leading run of
- * street-number tokens, keeps the meaningful remainder, caps length. The full
- * folder name should always be kept in a `title`/tooltip.
- *   "1931-1935 Bedford"     → "Bedford"
- *   "1925 Grand Concourse"  → "Grand Concourse"
- *   "1035 & 1039 42nd St"   → "42nd St"
- *   "1 OLD 3930 Carp"       → "OLD 3930 Carp"
- */
-export function shortProjectName(name: string): string {
-  const tokens = name.trim().split(/\s+/);
-  let i = 0;
-  while (i < tokens.length - 1 && /^[\d&,\/.\-]+$/.test(tokens[i])) i += 1;
-  const rest = tokens.slice(i).join(' ') || name;
-  return rest.length > 18 ? `${rest.slice(0, 17)}…` : rest;
-}
-
-/**
  * Delta classification matching §7 thresholds.
  * - >10% over → 'over'
  * - >5% under → 'under'

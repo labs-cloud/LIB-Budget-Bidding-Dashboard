@@ -14,7 +14,14 @@ import {
 import { tradeKey } from './clickup/client';
 import { computeUpdatedBudgets, resolveWinningBid } from './clickup/budgetAutomation';
 import { MOCK_PROJECTS } from './clickup/mockData';
-import { fmtUsd, daysSince, shortProjectName } from './formatting';
+import { fmtUsd, daysSince } from './formatting';
+
+// ClickUp workspace ID (constant — verified in AGENTS.md §3). Used to
+// construct folder URLs; task URLs we always read from the API response.
+const CLICKUP_WORKSPACE_ID = '9017603275';
+function clickupFolderUrl(folderId: string): string {
+  return `https://app.clickup.com/${CLICKUP_WORKSPACE_ID}/v/o/f/${folderId}`;
+}
 
 // ----------------------------------------------------------------------------
 // Public shape — everything the client component needs to render.
@@ -31,7 +38,6 @@ export interface UnifiedPortfolio {
   hero: {
     inFlight: number;
     activeProjects: number;
-    totalFolders: number;
   };
   kpis: {
     inFlight: number; inFlightDelta: string;
@@ -40,7 +46,7 @@ export interface UnifiedPortfolio {
     tradeTypePending: number; tradeTypePendingProjects: number;
   };
   matrix: {
-    projects: Array<{ folderId: string; short: string; full: string }>;
+    projects: Array<{ folderId: string; name: string; url: string }>;
     rows: Array<{
       trade: string;
       cost: CostType;
@@ -53,8 +59,10 @@ export interface UnifiedPortfolio {
     sub: string;
     trade: string;
     project: string;
+    projectFolderId: string;
     days: number;
     rfp: string;
+    url: string;
   }>;
   gantt: Array<{
     cost: CostType;
@@ -87,7 +95,8 @@ export interface GanttRow {
 export interface UnifiedProject {
   folderId: string;
   folderName: string;
-  short: string;
+  /** ClickUp folder URL — for the "Open in ClickUp" header button. */
+  url: string;
   address: string | null;
   coord: { initials: string; name: string };
   projectId: string | null;
@@ -124,6 +133,8 @@ export interface TimelineRow {
   rfp: string | null;
   date: string;
   warn?: boolean;
+  /** ClickUp URL for the relevant bid task (or budget task for Set rows). */
+  url: string | null;
 }
 
 export interface TimelineGroup {
@@ -139,6 +150,7 @@ export interface InFlightCard {
   days: string;
   meta: string;
   crit?: boolean;
+  url: string;
 }
 
 export interface PtSub {
@@ -148,6 +160,7 @@ export interface PtSub {
   isLow?: boolean;
   rfp: string;
   last: string;
+  url: string;
 }
 
 export interface PtTrade {
@@ -158,6 +171,8 @@ export interface PtTrade {
   updated: number;
   allocated: number;
   subs: (PtSub | null)[];
+  /** ClickUp URL for the budget task (the trade row). */
+  url: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -266,32 +281,22 @@ export function buildUnifiedPortfolio(input: {
   refreshedAt: number;
   warnings: string[];
 }): UnifiedPortfolio {
-  const { snapshots: allSnapshots, source, refreshedAt, warnings } = input;
+  const { snapshots, source, refreshedAt, warnings } = input;
 
-  // Filter to projects with actual bidding/budget activity. The active-projects
-  // ClickUp space contains every folder ever spun up (~42 today), most of
-  // which have no bids and no allocated budgets — including them blows up the
-  // matrix horizontally and pumps "Trade Type pending" into the thousands.
-  const snapshots = allSnapshots.filter((s) =>
-    s.biddingTasks.length > 0
-    || s.budgetTasks.some((b) => (b.budgetAllocated ?? 0) > 0)
-  );
-
-  // Project columns — alphabetical by full folder name.
+  // Project columns — alphabetical by full folder name. We use the verbatim
+  // ClickUp folder name (e.g. "800 Brady Ave", "1931-1935 Bedford") so the
+  // header is the canonical project identifier, copyable and screen-reader
+  // friendly. Every folder under the Active Projects space appears as a
+  // column; empty folders render as columns of "—" cells, signalling
+  // "not yet in bidding" rather than being silently dropped.
   const projects = snapshots
     .slice()
     .sort((a, b) => a.folderName.localeCompare(b.folderName))
-    .map((s) => ({ folderId: s.folderId, short: shortProjectName(s.folderName), full: s.folderName }));
-
-  // Disambiguate duplicate short labels (e.g. two "Tillotson" folders) by
-  // prepending the leading street-number tokens from the original name.
-  const shortCounts = new Map<string, number>();
-  for (const p of projects) shortCounts.set(p.short, (shortCounts.get(p.short) ?? 0) + 1);
-  for (const p of projects) {
-    if ((shortCounts.get(p.short) ?? 0) <= 1) continue;
-    const num = p.full.match(/^[\d&,\-/]+/)?.[0]?.trim();
-    p.short = num ? `${num} ${p.short}` : p.full;
-  }
+    .map((s) => ({
+      folderId: s.folderId,
+      name: s.folderName,
+      url: clickupFolderUrl(s.folderId),
+    }));
 
   // Build union of trade rows (canonical order, then extras alpha).
   const seenTrades = new Map<string, string>();
@@ -361,17 +366,15 @@ export function buildUnifiedPortfolio(input: {
       }
     }
   }
+  // Trade Type pending — count only the literal "Pending" dropdown value.
+  // null / undefined means "Sol hasn't classified yet, but the value isn't
+  // explicitly Pending"; we want the explicit-pending signal here. ClickUp's
+  // "2. Trade Type" field is one of: Biddable | Set | N/A | Pending.
   let tradeTypePending = 0;
   const pendingProjects = new Set<string>();
   for (const s of snapshots) {
     for (const bt of s.budgetTasks) {
-      // ClickUp now exposes an explicit "Pending" Trade Type option — count
-      // both that and unset (null) as still-pending classification.
-      const pending = bt.tradeType == null || bt.tradeType === 'Pending';
-      if (!pending) continue;
-      // Skip placeholder budget tasks that have no allocation yet — they're
-      // shells the SOP creates before a project enters bidding.
-      if ((bt.budgetAllocated ?? 0) <= 0) continue;
+      if (bt.tradeType !== 'Pending') continue;
       tradeTypePending += 1;
       pendingProjects.add(s.folderId);
     }
@@ -379,7 +382,7 @@ export function buildUnifiedPortfolio(input: {
 
   // Stale follow-up list — top 5 oldest RFP-sent or followed-up bids across all projects.
   const projectNameById = new Map(snapshots.map((s) => [s.folderId, s.folderName]));
-  const staleAll: Array<{ sub: string; trade: string; project: string; days: number; rfp: string }> = [];
+  const staleAll: UnifiedPortfolio['stale'] = [];
   for (const s of snapshots) {
     for (const b of s.biddingTasks) {
       if (!IN_FLIGHT_STATUSES.includes(b.status)) continue;
@@ -388,9 +391,11 @@ export function buildUnifiedPortfolio(input: {
       staleAll.push({
         sub: b.subcontractor || '(no name)',
         trade: b.trade ?? 'Unknown trade',
-        project: shortProjectName(projectNameById.get(s.folderId) ?? ''),
+        project: projectNameById.get(s.folderId) ?? '',
+        projectFolderId: s.folderId,
         days: d,
         rfp: fmtMonthDay(dateMsOf(b.dateUpdated)),
+        url: b.url,
       });
     }
   }
@@ -427,7 +432,7 @@ export function buildUnifiedPortfolio(input: {
     refreshedAt,
     refreshedAgo,
     warnings,
-    hero: { inFlight, activeProjects: snapshots.length, totalFolders: allSnapshots.length },
+    hero: { inFlight, activeProjects: snapshots.length },
     kpis: {
       inFlight, inFlightDelta: 'across all trades',
       awaitingFollowUp, awaitingStale,
@@ -635,6 +640,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         date: `Set · ${fmtMonthDay(dateMs)} · no bidding`,
         sortKey: dateMs ?? 0,
         sumDollars: dollars,
+        url: winningSub?.url ?? bt.url,
       });
       continue;
     }
@@ -650,6 +656,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         date: `Awarded · ${fmtMonthDay(dateMs)}`,
         sortKey: dateMs ?? 0,
         sumDollars: awardedBid.bidAmount ?? 0,
+        url: awardedBid.url,
       });
       continue;
     }
@@ -681,6 +688,11 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
     else if (stat === 'fu') dateLabel = `Followed up ${oldest ?? 0}d ago`;
     else dateLabel = `Awaiting response · RFP sent ${fmtMonthDay(rfpDate ?? null)}`;
 
+    // For the row's deep-link target, pick the oldest in-flight bid — that's
+    // the one most likely needing follow-up. Fall back to the budget task URL.
+    const oldestBid = inFlightBids
+      .slice()
+      .sort((a, b) => (daysSince(b.dateUpdated) ?? 0) - (daysSince(a.dateUpdated) ?? 0))[0];
     bidding.push({
       stat, tag, name: bt.trade,
       sub: `${inFlightBids.length} sub${inFlightBids.length === 1 ? '' : 's'} invited${winningAmount != null ? ` · low ${shortPickName(winner?.bid.subcontractor)}` : ''}`,
@@ -691,6 +703,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
       sortKey: -(oldest ?? 0),
       warn: stale && stat === 'fu',
       sumDollars: winningAmount ?? bt.budgetAllocated ?? 0,
+      url: oldestBid?.url ?? bt.url,
     });
   }
 
@@ -721,6 +734,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
     days: (days! > 10 ? `${days}d · stale` : `${days}d`),
     meta: `RFP ${fmtMonthDay(dateMsOf(bid.dateUpdated))} · ${bid.bidAmount != null ? `BR ${fmtUsd(bid.bidAmount)}` : 'awaiting reply'}`,
     crit: days! > 12,
+    url: bid.url,
   }));
 
   // Per-trade matrix rows.
@@ -751,6 +765,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
           isLow: b.id === lowestId,
           rfp: fmtMonthDay(dateMsOf(b.dateUpdated)),
           last: relativeDays(daysSince(b.dateUpdated)),
+          url: b.url,
         };
       });
 
@@ -762,6 +777,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         updated,
         allocated,
         subs,
+        url: bt.url,
       } satisfies PtTrade;
     });
 
@@ -771,7 +787,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
   return {
     folderId: snapshot.folderId,
     folderName: snapshot.folderName,
-    short: shortProjectName(snapshot.folderName),
+    url: clickupFolderUrl(snapshot.folderId),
     address: meta.address,
     coord: meta.coord,
     projectId: meta.projectId,
