@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { finalizedLowestBid, newBudget } from './budget';
-import type { BiddingStatus, BiddingTask, BudgetTask } from '../clickup/types';
+import type { BiddingTask, BudgetTask } from '../clickup/types';
+import {
+  BRADY_BUDGET_OUTLOOK,
+  BRADY_RULE_EXCEPTIONS,
+  BRADY_TOTALS,
+} from './__fixtures__/brady-budget-outlook';
 
 function bt(partial: Partial<BudgetTask> = {}): BudgetTask {
   return {
@@ -145,71 +150,53 @@ describe('newBudget', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 800 Brady Ave — Budget Outlook footer totals.
+// 800 Brady Ave — real Budget Outlook fixture (54 data rows).
 //
-// The real Budget Outlook sheet has 56 trade rows. Until the full xlsx export
-// is wired into the repo as a fixture, Brady is represented here by 4 rows:
-// the two rows cited verbatim in the migration brief plus two aggregate rows
-// (one standing in for every remaining trade WITH a finalized bid, one for
-// every remaining trade with estimate-only). The aggregates are sized so the
-// summed columns reproduce Brady's documented footer totals exactly — this
-// verifies the column math and the newBudget rule end-to-end. Swap in the
-// 56-row export when available.
+// Verifies the derivation against the actual Excel data rather than a
+// synthetic dataset: per-row regressions (null vs 0 handling, currency
+// precision on $X.YZ amounts, blank-cell exclusion) surface here.
 // ---------------------------------------------------------------------------
-describe('800 Brady Ave Budget Outlook totals', () => {
-  const BRADY = {
-    estimated: 13_681_500,
-    finalized: 7_650_167.7,
-    newBudget: 13_465_667.7,
-  };
+describe('Brady Budget Outlook — real 54-row fixture', () => {
   const TOLERANCE = 1_000;
 
-  interface BradyRow {
-    budget: BudgetTask;
-    bids: BiddingTask[];
-  }
-
-  function row(
-    trade: string,
-    estimated: number,
-    finalizedBidAmount: number | null
-  ): BradyRow {
-    const budget = bt({ id: `brady-${trade}`, trade, estimatedBudget: estimated });
-    const bids: BiddingTask[] =
-      finalizedBidAmount == null
-        ? []
-        : [bid({ id: `brady-${trade}-bid`, trade, status: 'Awarded' as BiddingStatus, bidAmount: finalizedBidAmount })];
-    return { budget, bids };
-  }
-
-  const rows: BradyRow[] = [
-    // Cited verbatim in the brief.
-    row('DOT Meeting', 2_500, null),
-    row('Foundation', 600_000, 3_030_000),
-    // Aggregate of every remaining trade that has a finalized bid.
-    row('Remainder — finalized', 7_266_000, 4_620_167.7),
-    // Aggregate of every remaining trade still at estimate-only.
-    row('Remainder — estimate only', 5_813_000, null),
-  ];
-
-  it('sums Estimated to the Budget Outlook footer total', () => {
-    const total = rows.reduce((s, r) => s + (r.budget.estimatedBudget ?? 0), 0);
-    expect(Math.abs(total - BRADY.estimated)).toBeLessThan(TOLERANCE);
+  it('fixture has the right shape', () => {
+    expect(BRADY_BUDGET_OUTLOOK).toHaveLength(54);
+    const names = new Set(BRADY_BUDGET_OUTLOOK.map((r) => r.trade));
+    expect(names.size).toBe(54);
   });
 
-  it('sums Finalized Lowest Bid to the Budget Outlook footer total', () => {
-    const total = rows.reduce(
-      (s, r) => s + (finalizedLowestBid(r.budget, r.bids) ?? 0),
-      0
-    );
-    expect(Math.abs(total - BRADY.finalized)).toBeLessThan(TOLERANCE);
+  it('sum of estimatedBudget matches the Excel total within $1k', () => {
+    const sum = BRADY_BUDGET_OUTLOOK
+      .map((r) => r.estimatedBudget ?? 0)
+      .reduce((a, b) => a + b, 0);
+    expect(Math.abs(sum - BRADY_TOTALS.estimated)).toBeLessThan(TOLERANCE);
   });
 
-  it('sums New Budget to the Budget Outlook footer total', () => {
-    const total = rows.reduce((s, r) => {
-      const fin = finalizedLowestBid(r.budget, r.bids);
-      return s + (newBudget(r.budget, fin) ?? 0);
-    }, 0);
-    expect(Math.abs(total - BRADY.newBudget)).toBeLessThan(TOLERANCE);
+  it('sum of finalizedLowestBid matches the Excel total within $1k', () => {
+    const sum = BRADY_BUDGET_OUTLOOK
+      .map((r) => r.finalizedLowestBid ?? 0)
+      .reduce((a, b) => a + b, 0);
+    expect(Math.abs(sum - BRADY_TOTALS.finalizedLowest)).toBeLessThan(TOLERANCE);
+  });
+
+  it('sum of newBudget matches the Excel total within $1k', () => {
+    const sum = BRADY_BUDGET_OUTLOOK
+      .map((r) => r.newBudget ?? 0)
+      .reduce((a, b) => a + b, 0);
+    expect(Math.abs(sum - BRADY_TOTALS.newBudget)).toBeLessThan(TOLERANCE);
+  });
+
+  it('newBudget derivation rule holds row-by-row (bar the known exceptions)', () => {
+    for (const r of BRADY_BUDGET_OUTLOOK) {
+      if (BRADY_RULE_EXCEPTIONS.has(r.trade)) continue;
+      // The Excel finalized column uses a literal 0 as "no finalized bid";
+      // the real finalizedLowestBid() only ever yields a positive number or
+      // null, so normalize 0 → null before feeding the real newBudget().
+      const fin = r.finalizedLowestBid != null && r.finalizedLowestBid > 0
+        ? r.finalizedLowestBid
+        : null;
+      const expected = newBudget(bt({ trade: r.trade, estimatedBudget: r.estimatedBudget }), fin);
+      expect(r.newBudget).toBe(expected);
+    }
   });
 });
