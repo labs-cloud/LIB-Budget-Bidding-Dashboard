@@ -62,6 +62,12 @@ export type CostType = 'hard' | 'soft';
 
 export interface UnifiedPortfolio {
   source: 'live' | 'mock';
+  /**
+   * Which top-level dashboard this payload was built for. `bidding` payloads
+   * have already had every non-Biddable trade filtered out at build time, so
+   * downstream components never see Set / N/A / Pending trades.
+   */
+  view: 'budget' | 'bidding';
   refreshedAt: number;
   refreshedAgo: string;
   warnings: string[];
@@ -115,7 +121,7 @@ export interface UnifiedPortfolio {
   subcontractors: SubcontractorStats[];
   subcontractorsListUrl: string;
   /** Budget Outlook three-number rollup, summed across every project. */
-  budgetOutlook: { estimated: string; finalized: string; newBudget: string };
+  budgetOutlook: { estimated: string; finalized: string; newBudget: string; tradeCount: number };
   gantt: Array<{
     cost: CostType;
     label: 'Soft Cost' | 'Hard Cost';
@@ -282,6 +288,13 @@ export interface PtTrade {
   budgetStatus: BudgetStatusCode | null;
   /** Trade Type — used by the SET → Finance chip on Set rows (Gap 4). */
   tradeType: TradeTypeValue | null;
+  /** Trade-level rollup bidding status — drives the Bidding-view columns. */
+  biddingStatusCode: StatusCode | null;
+  biddingStatusName: string | null;
+  /** Earliest RFP-sent date across the trade's bids (Bidding-view column). */
+  rfpSentDate: string;
+  /** Days since the most recent bid activity (Bidding-view column). */
+  daysSinceUpdate: number | null;
 }
 
 // ----------------------------------------------------------------------------
@@ -414,13 +427,39 @@ function costOf(trade: string): CostType {
   return HARD_TRADES_FOR_COST.has(trade) ? 'hard' : 'soft';
 }
 
+/**
+ * Restrict a project snapshot to its Biddable trades only — the view boundary
+ * for the Bidding Dashboard. Set / N/A / Pending trades (and any Bidding tasks
+ * or trade-groups joined to them by trade name) are dropped so every
+ * downstream transform — matrix rows, KPIs, panels, gantt — automatically
+ * operates on the bidding pipeline subset.
+ */
+function biddableOnly(s: ProjectSnapshot): ProjectSnapshot {
+  const budgetTasks = s.budgetTasks.filter((b) => b.tradeType === 'Biddable');
+  const keys = new Set(budgetTasks.map((b) => tradeKey(b.trade)));
+  return {
+    ...s,
+    budgetTasks,
+    biddingTasks: s.biddingTasks.filter((b) => b.trade != null && keys.has(tradeKey(b.trade))),
+    tradeGroups: s.tradeGroups.filter((g) => keys.has(tradeKey(g.trade))),
+  };
+}
+
 export function buildUnifiedPortfolio(input: {
   snapshots: ProjectSnapshot[];
   source: 'live' | 'mock';
   refreshedAt: number;
   warnings: string[];
+  /** Default 'budget'. 'bidding' filters to Biddable trades before anything. */
+  view?: 'budget' | 'bidding';
 }): UnifiedPortfolio {
-  const { snapshots, source, refreshedAt, warnings } = input;
+  const { source, refreshedAt, warnings } = input;
+  const view: 'budget' | 'bidding' = input.view ?? 'budget';
+  // Enforce the view boundary up front: in Bidding view every snapshot is
+  // narrowed to its Biddable trades, so no downstream code has to know.
+  const snapshots = view === 'bidding'
+    ? input.snapshots.map(biddableOnly)
+    : input.snapshots;
 
   // Project columns — alphabetical by full folder name. We use the verbatim
   // ClickUp folder name (e.g. "800 Brady Ave", "1931-1935 Bedford") so the
@@ -612,8 +651,10 @@ export function buildUnifiedPortfolio(input: {
   let pfEstimated = 0;
   let pfFinalized = 0;
   let pfNewBudget = 0;
+  let pfTradeCount = 0;
   for (const s of snapshots) {
     for (const b of s.budgetTasks) {
+      pfTradeCount += 1;
       pfEstimated += b.estimatedBudget ?? 0;
       const fin = finalizedLowestBid(b, s.biddingTasks);
       pfFinalized += fin ?? 0;
@@ -627,6 +668,7 @@ export function buildUnifiedPortfolio(input: {
 
   return {
     source,
+    view,
     refreshedAt,
     refreshedAgo,
     warnings,
@@ -648,6 +690,7 @@ export function buildUnifiedPortfolio(input: {
       estimated: fmtUsd(pfEstimated),
       finalized: fmtUsd(pfFinalized),
       newBudget: fmtUsd(pfNewBudget),
+      tradeCount: pfTradeCount,
     },
     gantt,
     ganttAxis,
@@ -968,6 +1011,19 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
       const newBudgetVal = deriveNewBudget(bt, finalizedLowest);
       const stage = stageLabelFor(bt, bids);
 
+      // Bidding-view column data: trade-level rollup status, earliest RFP
+      // date, and days since the most recent bid activity.
+      const rollupStatus = rollupStatusForTrade(bids);
+      const biddingStatusCode = rollupStatus ? (STATUS_CODE[rollupStatus] as StatusCode) : null;
+      const rfpMs = bids
+        .map((b) => dateMsOf(b.dateUpdated))
+        .filter((d): d is number => d != null)
+        .sort((a, b) => a - b)[0];
+      const daysSinceUpdate = bids
+        .map((b) => daysSince(b.dateUpdated))
+        .filter((d): d is number => d != null)
+        .sort((a, b) => a - b)[0] ?? null;
+
       const subs: (PtSub | null)[] = padded.map((b) => {
         if (!b) return null;
         return {
@@ -1000,6 +1056,10 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         url: bt.url,
         budgetStatus: budgetStatusCodeFromString(bt.budgetStatus),
         tradeType: bt.tradeType,
+        biddingStatusCode,
+        biddingStatusName: rollupStatus,
+        rfpSentDate: fmtMonthDay(rfpMs ?? null),
+        daysSinceUpdate,
       } satisfies PtTrade;
     });
 

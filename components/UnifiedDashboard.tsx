@@ -137,6 +137,7 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
           project={project}
           data={data}
           theme={theme}
+          embed={embed}
           onToggleTheme={toggleTheme}
         />
 
@@ -212,7 +213,7 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
             onOpenSyncPanel={() => setSyncPanelOpen(true)}
           />
         ) : project ? (
-          <ProjectShell project={project} view={view as ProjectView} onChange={(v) => setView(v)} initialTrade={initialTrade} />
+          <ProjectShell project={project} mode={data.view} view={view as ProjectView} onChange={(v) => setView(v)} initialTrade={initialTrade} />
         ) : (
           <p style={{ color: 'var(--color-text-secondary)' }}>Project not found.</p>
         )}
@@ -236,19 +237,26 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
 // ----------------------------------------------------------------------------
 
 function Hero({
-  inProject, project, data, theme, onToggleTheme,
+  inProject, project, data, theme, embed, onToggleTheme,
 }: {
   inProject: boolean;
   project: UnifiedProject | null;
   data: UnifiedPortfolio;
   theme: 'light' | 'dark';
+  embed: boolean;
   onToggleTheme: () => void;
 }) {
-  const title = inProject && project ? project.folderName : 'Budget Dashboard';
+  const mode = data.view;
+  const title = inProject && project ? project.folderName : `${mode === 'bidding' ? 'Bidding' : 'Budget'} Dashboard`;
   const activeCount = data.hero.activeProjects;
   const meta = inProject && project
-    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding · {project.summary.set} set · {project.summary.syncIssues} sync issues · Updated budget {project.summary.updatedBudget}</>
+    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding{mode === 'budget' ? <> · {project.summary.set} set · {project.summary.syncIssues} sync issues</> : null} · Updated budget {project.summary.updatedBudget}</>
     : <><b>{activeCount} of {activeCount} active projects</b> · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
+
+  // Budget/Bidding toggle navigates with ?view=, preserving the project route
+  // and embed flag so the choice deep-links and survives refresh.
+  const base = inProject && project ? `/project/${encodeURIComponent(project.folderId)}` : '/';
+  const hrefFor = (m: 'budget' | 'bidding') => `${base}?view=${m}${embed ? '&embed=1' : ''}`;
 
   return (
     <div className="lib-hero">
@@ -257,13 +265,31 @@ function Hero({
         <img src="/lib_logo.png" alt="Lead It Builders" className="lib-logo-svg" style={{ objectFit: 'contain' }} />
       </div>
       <div>
-        <h1>{title}</h1>
+        <h1>
+          {title}
+          <span className={`mode-chip ${mode}`}>B&amp;B · {mode === 'bidding' ? 'Bidding' : 'Budget'}</span>
+        </h1>
         <div className="meta">{meta}</div>
       </div>
       <div className="lib-hero-right">
-        <button className="dash-pill" type="button">
-          <Icon name="layout-dashboard" /> Budget dashboard
-        </button>
+        <div className="dash-toggle" role="tablist" aria-label="Dashboard view">
+          <a
+            className={mode === 'budget' ? 'active' : ''}
+            href={hrefFor('budget')}
+            role="tab"
+            aria-selected={mode === 'budget'}
+          >
+            <Icon name="layout-dashboard" /> Budget
+          </a>
+          <a
+            className={mode === 'bidding' ? 'active' : ''}
+            href={hrefFor('bidding')}
+            role="tab"
+            aria-selected={mode === 'bidding'}
+          >
+            <Icon name="gavel" /> Bidding
+          </a>
+        </div>
         <button className="iconbtn" type="button" title="Refresh" onClick={() => location.reload()}><Icon name="refresh" /></button>
         <button className="iconbtn" type="button" onClick={onToggleTheme} aria-label="Toggle theme">
           {theme === 'dark' ? <Icon name="sun" /> : <Icon name="moon" />}
@@ -289,35 +315,48 @@ function PortfolioShell({
   onOpenSyncPanel: () => void;
 }) {
   const k = data.kpis;
+  const bidding = data.view === 'bidding';
+  // Trade-count caption adapts: "56 trades" in Budget view, "24 biddable
+  // trades" in Bidding view.
+  const tradeCaption = bidding
+    ? `${data.budgetOutlook.tradeCount} biddable trades`
+    : `${data.budgetOutlook.tradeCount} trades`;
   return (
     <>
       <div className="kpis">
         <div className="kpi info"><div className="l">Bids in flight</div><div className="v">{k.inFlight}</div><div className="s">{k.inFlightDelta}</div></div>
         <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">{k.awaitingFollowUp}</div><div className="s">{k.awaitingStale} stale &gt;7d</div></div>
         <div className="kpi good"><div className="l">Ready to award</div><div className="v">{k.readyToAward}</div><div className="s">{k.readyDelta}</div></div>
-        <div className="kpi neutral">
-          <div className="l">Pending trade-type assignments</div>
-          <div className="v">{k.tradeTypePending}</div>
-          <div className="s">across {k.tradeTypePendingProjects} projects</div>
-        </div>
-        <button
-          type="button"
-          className="kpi warn kpi-button"
-          onClick={onOpenSyncPanel}
-          title="Open sync issue side panel"
-        >
-          <div className="l">Sync issues <span className="ext-icon" aria-hidden>↗</span></div>
-          <div className="v">{k.syncIssues}</div>
-          <div className="s">across {k.syncProjects} projects · click to inspect</div>
-        </button>
+        {/* Operational KPIs — about getting Trade Type set in the first place.
+            Budget view only; Bidding view assumes Trade Type is already
+            Biddable. */}
+        {!bidding ? (
+          <div className="kpi neutral">
+            <div className="l">Pending trade-type assignments</div>
+            <div className="v">{k.tradeTypePending}</div>
+            <div className="s">across {k.tradeTypePendingProjects} projects</div>
+          </div>
+        ) : null}
+        {!bidding ? (
+          <button
+            type="button"
+            className="kpi warn kpi-button"
+            onClick={onOpenSyncPanel}
+            title="Open sync issue side panel"
+          >
+            <div className="l">Sync issues <span className="ext-icon" aria-hidden>↗</span></div>
+            <div className="v">{k.syncIssues}</div>
+            <div className="s">across {k.syncProjects} projects · click to inspect</div>
+          </button>
+        ) : null}
       </div>
 
       {/* Budget Outlook portfolio rollup — Estimated → Finalized → New Budget
           summed across every project, mirroring the team's xlsx footer. */}
       <div className="budget-tiles portfolio">
-        <div className="bt-tile"><div className="bt-v">{data.budgetOutlook.estimated}</div><div className="bt-l">Estimated</div></div>
-        <div className="bt-tile"><div className="bt-v">{data.budgetOutlook.finalized}</div><div className="bt-l">Finalized lowest</div></div>
-        <div className="bt-tile primary"><div className="bt-v">{data.budgetOutlook.newBudget}</div><div className="bt-l">New Budget</div></div>
+        <div className="bt-tile"><div className="bt-v">{data.budgetOutlook.estimated}</div><div className="bt-l">Estimated <span className="bt-cap">· {tradeCaption}</span></div></div>
+        <div className="bt-tile"><div className="bt-v">{data.budgetOutlook.finalized}</div><div className="bt-l">Finalized lowest <span className="bt-cap">· {tradeCaption}</span></div></div>
+        <div className="bt-tile primary"><div className="bt-v">{data.budgetOutlook.newBudget}</div><div className="bt-l">New Budget <span className="bt-cap">· {tradeCaption}</span></div></div>
       </div>
 
       {view === 'pf-matrix'
@@ -609,8 +648,31 @@ function GanttRowEl({ row, todayPct }: { row: GanttRow; todayPct: number }) {
 // ----------------------------------------------------------------------------
 
 function ProjectShell({
-  project, view, onChange, initialTrade,
-}: { project: UnifiedProject; view: ProjectView; onChange: (v: View) => void; initialTrade: string | null }) {
+  project, mode, view, onChange, initialTrade,
+}: { project: UnifiedProject; mode: 'budget' | 'bidding'; view: ProjectView; onChange: (v: View) => void; initialTrade: string | null }) {
+  const bidding = mode === 'bidding';
+  // Bidding view with no Biddable trades — render an empty state instead of
+  // an empty matrix. (Section 6 of the view-split brief.)
+  if (bidding && project.ptTrades.length === 0) {
+    return (
+      <>
+        <div className="crumb">
+          <a href="/?view=bidding">← Budget &amp; Bidding</a>
+          <Icon name="chevron-right" />
+          <span>{project.folderName}</span>
+        </div>
+        <div className="empty-state">
+          <Icon name="gavel" size={26} />
+          <h2>No biddable trades on this project yet</h2>
+          <p>
+            Set Trade Type to <strong>Biddable</strong> on the{' '}
+            <a href={`/project/${encodeURIComponent(project.folderId)}?view=budget`}>Budget Dashboard</a>{' '}
+            to populate this view.
+          </p>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <div className="crumb">
@@ -646,18 +708,20 @@ function ProjectShell({
       </header>
 
       <div className="summary">
-        <div className="cell"><div className="l">Trades</div><div className="v">{project.summary.trades}</div></div>
+        <div className="cell"><div className="l">{bidding ? 'Biddable trades' : 'Trades'}</div><div className="v">{project.summary.trades}</div></div>
         <div className="cell good"><div className="l">Awarded</div><div className="v">{project.summary.awarded}</div></div>
         <div className="cell warn"><div className="l">In bidding</div><div className="v">{project.summary.bidding}</div></div>
-        <div className="cell muted"><div className="l">Set</div><div className="v">{project.summary.set}</div></div>
-        <div className="cell warn"><div className="l">Sync issues</div><div className="v">{project.summary.syncIssues}</div></div>
+        {/* Set + Sync-issues cells are operational/Budget-only — irrelevant
+            once the view is scoped to Biddable trades. */}
+        {!bidding ? <div className="cell muted"><div className="l">Set</div><div className="v">{project.summary.set}</div></div> : null}
+        {!bidding ? <div className="cell warn"><div className="l">Sync issues</div><div className="v">{project.summary.syncIssues}</div></div> : null}
       </div>
       {/* Budget Outlook three-number progression — mirrors the team's
           SharePoint xlsx (Estimated → Finalized lowest → New Budget). */}
       <div className="budget-tiles">
-        <div className="bt-tile"><div className="bt-v">{project.summary.estimatedTotal}</div><div className="bt-l">Estimated</div></div>
-        <div className="bt-tile"><div className="bt-v">{project.summary.finalizedTotal}</div><div className="bt-l">Finalized lowest</div></div>
-        <div className="bt-tile primary"><div className="bt-v">{project.summary.newBudgetTotal}</div><div className="bt-l">New Budget</div></div>
+        <div className="bt-tile"><div className="bt-v">{project.summary.estimatedTotal}</div><div className="bt-l">Estimated <span className="bt-cap">· {project.summary.trades} {bidding ? 'biddable trades' : 'trades'}</span></div></div>
+        <div className="bt-tile"><div className="bt-v">{project.summary.finalizedTotal}</div><div className="bt-l">Finalized lowest <span className="bt-cap">· {project.summary.trades} {bidding ? 'biddable trades' : 'trades'}</span></div></div>
+        <div className="bt-tile primary"><div className="bt-v">{project.summary.newBudgetTotal}</div><div className="bt-l">New Budget <span className="bt-cap">· {project.summary.trades} {bidding ? 'biddable trades' : 'trades'}</span></div></div>
       </div>
 
       <div className="project-subtabs">
@@ -669,12 +733,15 @@ function ProjectShell({
         </button>
       </div>
 
-      {view === 'pj-timeline' ? <ProjectTimeline project={project} /> : <ProjectMatrix project={project} initialTrade={initialTrade} />}
+      {view === 'pj-timeline'
+        ? <ProjectTimeline project={project} mode={mode} />
+        : <ProjectMatrix project={project} mode={mode} initialTrade={initialTrade} />}
     </>
   );
 }
 
-function ProjectTimeline({ project }: { project: UnifiedProject }) {
+function ProjectTimeline({ project, mode }: { project: UnifiedProject; mode: 'budget' | 'bidding' }) {
+  const bidding = mode === 'bidding';
   return (
     <div className="layout">
       <div className="timeline">
@@ -727,6 +794,8 @@ function ProjectTimeline({ project }: { project: UnifiedProject }) {
       </div>
 
       <aside className="side">
+        {/* Bids in flight — Bidding view only. */}
+        {bidding ? (
         <div className="panel">
           <h3>Bids in flight <span className="count">{project.inFlight.length}</span></h3>
           {project.inFlight.length === 0 ? (
@@ -751,6 +820,9 @@ function ProjectTimeline({ project }: { project: UnifiedProject }) {
             </a>
           ))}
         </div>
+        ) : null}
+        {/* Cost-type rollup — budget composition; Budget view only. */}
+        {!bidding ? (
         <div className="panel">
           <h3>Cost-type rollup</h3>
           <div className="chain-row">
@@ -782,12 +854,14 @@ function ProjectTimeline({ project }: { project: UnifiedProject }) {
             </span>
           </div>
         </div>
+        ) : null}
       </aside>
     </div>
   );
 }
 
-function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; initialTrade: string | null }) {
+function ProjectMatrix({ project, mode, initialTrade }: { project: UnifiedProject; mode: 'budget' | 'bidding'; initialTrade: string | null }) {
+  const bidding = mode === 'bidding';
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [highlightedSlug, setHighlightedSlug] = useState<string | null>(null);
 
@@ -829,10 +903,21 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
             <tr>
               <th>Trade</th>
               <th>Sub 1</th><th>Sub 2</th><th>Sub 3</th><th>Sub 4</th>
-              <th className="r">Estimated</th>
-              <th className="r">Finalized Lowest</th>
-              <th className="r">New Budget</th>
-              <th className="r">Δ vs Estimate</th>
+              {bidding ? (
+                <>
+                  <th className="r">Bidding Status</th>
+                  <th className="r">Bid Amount</th>
+                  <th className="r">RFP Sent</th>
+                  <th className="r">Days since update</th>
+                </>
+              ) : (
+                <>
+                  <th className="r">Estimated</th>
+                  <th className="r">Finalized Lowest</th>
+                  <th className="r">New Budget</th>
+                  <th className="r">Δ vs Estimate</th>
+                </>
+              )}
               <th className="c" />
             </tr>
           </thead>
@@ -885,10 +970,26 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                   <td className="bid-cell"><BidCard bid={t.subs[1]} /></td>
                   <td className="bid-cell"><BidCard bid={t.subs[2]} /></td>
                   <td className="bid-cell"><BidCard bid={t.subs[3]} /></td>
-                  <td className="td-money">{t.estimated == null ? '—' : fmtShort(t.estimated)}<span className="sub-label">estimated</span></td>
-                  <td className="td-money">{t.finalizedLowest == null ? '—' : fmtShort(t.finalizedLowest)}<span className="sub-label">finalized lowest</span></td>
-                  <td className="td-money strong">{t.newBudget == null ? '—' : fmtShort(t.newBudget)}<span className="sub-label">new budget</span></td>
-                  <td className="td-delta"><BudgetDeltaCell newBudgetVal={t.newBudget} estimated={t.estimated} /></td>
+                  {bidding ? (
+                    <>
+                      <td className="td-money">
+                        {t.biddingStatusCode ? (
+                          <span className={`bb-cell-pill ${t.biddingStatusCode.toLowerCase()}`}>{t.biddingStatusCode}</span>
+                        ) : '—'}
+                        <span className="sub-label">{t.biddingStatusName ?? 'not started'}</span>
+                      </td>
+                      <td className="td-money">{t.finalizedLowest == null ? '—' : fmtShort(t.finalizedLowest)}<span className="sub-label">lowest bid</span></td>
+                      <td className="td-money">{t.rfpSentDate}<span className="sub-label">RFP sent</span></td>
+                      <td className="td-money">{t.daysSinceUpdate == null ? '—' : `${t.daysSinceUpdate}d`}<span className="sub-label">since update</span></td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="td-money">{t.estimated == null ? '—' : fmtShort(t.estimated)}<span className="sub-label">estimated</span></td>
+                      <td className="td-money">{t.finalizedLowest == null ? '—' : fmtShort(t.finalizedLowest)}<span className="sub-label">finalized lowest</span></td>
+                      <td className="td-money strong">{t.newBudget == null ? '—' : fmtShort(t.newBudget)}<span className="sub-label">new budget</span></td>
+                      <td className="td-delta"><BudgetDeltaCell newBudgetVal={t.newBudget} estimated={t.estimated} /></td>
+                    </>
+                  )}
                   <td className="td-toggle">
                     <button type="button" aria-label="expand" onClick={(e) => { e.stopPropagation(); toggle(i); }}>
                       <Icon name="chevron-right" />

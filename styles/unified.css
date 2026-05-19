@@ -188,6 +188,49 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
   border-radius: var(--border-radius-md);
   font-size: 12px; color: var(--color-text-primary);
 }
+
+/* Budget / Bidding top-level toggle */
+.unified-app .dash-toggle {
+  display: inline-flex; gap: 0; padding: 3px;
+  background: var(--color-background-secondary);
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-tertiary);
+}
+.unified-app .dash-toggle a {
+  padding: 6px 13px; font-size: 12px; font-weight: 500;
+  color: var(--color-text-secondary); text-decoration: none;
+  border-radius: 5px; display: inline-flex; align-items: center; gap: 6px;
+  transition: background-color .12s, color .12s, box-shadow .12s;
+}
+.unified-app .dash-toggle a.active {
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  box-shadow: 0 0 0 0.5px var(--color-border-secondary), 0 1px 2px rgba(0,0,0,0.04);
+}
+.unified-app .dash-toggle a:hover:not(.active) { color: var(--color-text-primary); }
+
+/* Title chip — B&B · Budget / B&B · Bidding */
+.unified-app .mode-chip {
+  display: inline-block; vertical-align: 3px; margin-left: 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2px 9px; border-radius: 999px;
+}
+.unified-app .mode-chip.budget { background: var(--info-bg); color: var(--info-fg); }
+.unified-app .mode-chip.bidding { background: var(--bb-fu-bg); color: var(--bb-fu-fg); }
+
+/* Caption inside a budget tile label */
+.unified-app .budget-tiles .bt-cap { color: var(--color-text-tertiary); font-weight: 400; }
+
+/* Empty state — Bidding view, project with zero biddable trades */
+.unified-app .empty-state {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 8px; padding: 56px 24px; color: var(--color-text-secondary);
+  background: var(--color-background-secondary);
+  border-radius: var(--border-radius-lg);
+}
+.unified-app .empty-state h2 { margin: 4px 0 0; font-size: 16px; font-weight: 500; color: var(--color-text-primary); }
+.unified-app .empty-state p { margin: 0; font-size: 13px; max-width: 420px; }
+.unified-app .empty-state a { color: var(--color-text-info); text-decoration: underline; }
 .unified-app .iconbtn {
   width: 32px; height: 32px;
   border: 0.5px solid var(--color-border-secondary);
