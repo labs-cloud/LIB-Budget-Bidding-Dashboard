@@ -44,13 +44,14 @@ export interface UnifiedPortfolio {
     awaitingFollowUp: number; awaitingStale: number;
     readyToAward: number; readyDelta: string;
     tradeTypePending: number; tradeTypePendingProjects: number;
+    syncIssues: number; syncProjects: number;
   };
   matrix: {
     projects: Array<{ folderId: string; name: string; url: string }>;
     rows: Array<{
       trade: string;
       cost: CostType;
-      cells: Array<{ code: StatusCode | null; name: string | null }>;
+      cells: Array<{ code: StatusCode | null; name: string | null; syncIssues: number }>;
     }>;
     distribution: Array<{ code: StatusCode; n: number }>;
     totalCells: number;
@@ -107,6 +108,7 @@ export interface UnifiedProject {
     bidding: number;
     set: number;
     updatedBudget: string;
+    syncIssues: number;
   };
   rollup: {
     hardTrades: number; hardTotal: string;
@@ -168,6 +170,10 @@ export interface PtTrade {
   cost: CostType;
   tag: string;
   stage: string;
+  syncStatus: 'ok' | 'warn' | 'error';
+  syncIssues: string[];
+  expectedBiddingCount: number;
+  actualBiddingCount: number;
   updated: number;
   allocated: number;
   subs: (PtSub | null)[];
@@ -330,19 +336,21 @@ export function buildUnifiedPortfolio(input: {
     const k = tradeKey(trade);
     const cells = projects.map((p) => {
       const snap = snapByFolder.get(p.folderId);
-      if (!snap) return { code: null, name: null };
+      if (!snap) return { code: null, name: null, syncIssues: 0 };
       const tradeBids = snap.biddingTasks.filter((b) => b.trade && tradeKey(b.trade) === k);
       const group = snap.tradeGroups.find((g) => tradeKey(g.trade) === k);
+      const budgetTask = snap.budgetTasks.find((bt) => tradeKey(bt.trade) === k);
+      const syncIssues = budgetTask?.syncIssues.length ?? 0;
       const statuses = tradeBids.map((b) => b.status);
       if (statuses.length === 0 && group) statuses.push(group.status);
       const winning = STATUS_PRIORITY.find((s) => statuses.includes(s));
-      if (!winning) return { code: null, name: null };
-      return { code: STATUS_CODE[winning] as StatusCode, name: winning };
+      if (!winning) return { code: null, name: null, syncIssues };
+      return { code: STATUS_CODE[winning] as StatusCode, name: winning, syncIssues };
     });
     return { trade, cost: costOf(trade), cells };
   });
-  // Drop trade rows with no real cells anywhere.
-  const filteredRows = rows.filter((r) => r.cells.some((c) => c.code != null));
+  // Drop trade rows with no real cells or sync warnings anywhere.
+  const filteredRows = rows.filter((r) => r.cells.some((c) => c.code != null || c.syncIssues > 0));
 
   // KPIs.
   let inFlight = 0;
@@ -379,6 +387,8 @@ export function buildUnifiedPortfolio(input: {
       pendingProjects.add(s.folderId);
     }
   }
+  const syncIssues = snapshots.reduce((sum, s) => sum + s.syncHealth.total, 0);
+  const syncProjects = snapshots.filter((s) => s.syncHealth.total > 0).length;
 
   // Stale follow-up list — top 5 oldest RFP-sent or followed-up bids across all projects.
   const projectNameById = new Map(snapshots.map((s) => [s.folderId, s.folderName]));
@@ -438,6 +448,7 @@ export function buildUnifiedPortfolio(input: {
       awaitingFollowUp, awaitingStale,
       readyToAward, readyDelta: 'leveled · pending review',
       tradeTypePending, tradeTypePendingProjects: pendingProjects.size,
+      syncIssues, syncProjects,
     },
     matrix: { projects, rows: filteredRows, distribution, totalCells },
     stale: staleAll.slice(0, 5),
@@ -774,6 +785,10 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         cost: bt.costType === 'Hard' ? 'hard' : 'soft',
         tag: shortTag(bt.trade),
         stage,
+        syncStatus: bt.syncStatus,
+        syncIssues: bt.syncIssues.map((issue) => issue.message),
+        expectedBiddingCount: bt.expectedBiddingCount,
+        actualBiddingCount: bt.actualBiddingCount,
         updated,
         allocated,
         subs,
@@ -795,6 +810,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
     summary: {
       trades, awarded: awardedCount, bidding: biddingCount, set: setCount,
       updatedBudget: fmtUsd(updatedTotal),
+      syncIssues: snapshot.syncHealth.total,
     },
     rollup: {
       hardTrades, hardTotal: fmtUsd(hardSum),

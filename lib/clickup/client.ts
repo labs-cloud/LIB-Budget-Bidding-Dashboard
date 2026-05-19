@@ -14,6 +14,7 @@ import {
   costTypeForTrade,
   normalizeBiddingStatus,
 } from './types';
+import { analyzeProjectSync, budgetSyncDefaults, emptySyncHealthSummary } from './syncHealth';
 
 const CU_BASE = 'https://api.clickup.com/api/v2';
 
@@ -277,13 +278,14 @@ export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
     .filter((t) => t.parent != null && groupTradeById.has(t.parent))
     .map((t) => shapeBiddingTask(t, folder.name, folder.id, groupTradeById));
 
-  return {
+  return analyzeProjectSync({
     folderId: folder.id,
     folderName: folder.name,
     budgetTasks,
     biddingTasks,
     tradeGroups,
-  };
+    syncHealth: emptySyncHealthSummary(),
+  });
 }
 
 function normalizeTradeType(raw: string | null): TradeTypeValue | null {
@@ -318,10 +320,12 @@ export function shapeBudgetTask(
     costType,
     budgetAllocated: readNumberField(task, BUDGET_FIELDS.BudgetAllocated),
     updatedBudget: readNumberField(task, BUDGET_FIELDS.UpdatedBudget),
+    subcontractors: readLabelsField(task, BUDGET_FIELDS.Subcontractors),
     budgetStatus: task.status?.status ?? '',
     projectFolder: folderName,
     projectFolderId: folderId,
     listId: task.list?.id ?? '',
+    ...budgetSyncDefaults(),
   };
 }
 

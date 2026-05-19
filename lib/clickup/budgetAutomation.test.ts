@@ -38,10 +38,15 @@ function budget(partial: Partial<BudgetTask>): BudgetTask {
     costType: 'Soft',
     budgetAllocated: 1000,
     updatedBudget: null,
+    subcontractors: [],
     budgetStatus: 'open for bidding',
     projectFolder: 'P',
     projectFolderId: 'f1',
     listId: 'l1',
+    syncStatus: 'ok',
+    syncIssues: [],
+    expectedBiddingCount: 0,
+    actualBiddingCount: 0,
     ...partial,
   };
 }
@@ -53,6 +58,11 @@ function snapshot(budgetTasks: BudgetTask[], biddingTasks: BiddingTask[]): Proje
     budgetTasks,
     biddingTasks,
     tradeGroups: [],
+    syncHealth: {
+      total: 0,
+      bySeverity: { info: 0, warning: 0, error: 0 },
+      byCategory: {},
+    },
   };
 }
 

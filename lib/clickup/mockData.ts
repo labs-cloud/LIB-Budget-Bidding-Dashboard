@@ -7,6 +7,7 @@ import {
   TradeBiddingGroup,
   costTypeForTrade,
 } from './types';
+import { analyzeProjectSync, budgetSyncDefaults, emptySyncHealthSummary } from './syncHealth';
 
 /**
  * Realistic mock data so the dashboard renders before CLICKUP_API_TOKEN is wired.
@@ -112,19 +113,29 @@ const BRADY_GRID: MockBidRow[] = [
 ];
 
 function makeMockSnapshot(project: MockProject, grid: MockBidRow[]): ProjectSnapshot {
-  const budgetTasks: BudgetTask[] = grid.map((row, idx) => ({
-    id: `${project.folderId}-bt-${idx}`,
-    url: `https://app.clickup.com/t/${project.folderId}-bt-${idx}`,
-    trade: row.trade,
-    tradeType: 'Biddable',
-    costType: costTypeForTrade(row.trade),
-    budgetAllocated: row.budget,
-    updatedBudget: null,
-    budgetStatus: 'Open for Bidding',
-    projectFolder: project.folderName,
-    projectFolderId: project.folderId,
-    listId: `${project.folderId}-budget`,
-  }));
+  const budgetTasks: BudgetTask[] = grid.map((row, idx) => {
+    const subcontractors = row.subs
+      .map((sub) => sub?.[0] ?? null)
+      .filter((name): name is string => !!name);
+    const isSetExample = project.folderName === '800 Brady Ave' && row.trade === 'Live Security';
+    const isPendingExample = project.folderName === '425 Atlantic Ave' && row.trade === 'Roofing';
+    const missingBudgetExample = project.folderName === '1180 Crotona Ave' && row.trade === 'Stucco';
+    return {
+      id: `${project.folderId}-bt-${idx}`,
+      url: `https://app.clickup.com/t/${project.folderId}-bt-${idx}`,
+      trade: row.trade,
+      tradeType: isSetExample ? 'Set' : isPendingExample ? 'Pending' : 'Biddable',
+      costType: costTypeForTrade(row.trade),
+      budgetAllocated: missingBudgetExample ? null : row.budget,
+      updatedBudget: null,
+      subcontractors,
+      budgetStatus: isSetExample ? 'Budget Set' : 'Open for Bidding',
+      projectFolder: project.folderName,
+      projectFolderId: project.folderId,
+      listId: `${project.folderId}-budget`,
+      ...budgetSyncDefaults(),
+    };
+  });
 
   const biddingTasks: BiddingTask[] = [];
   const tradeGroups: TradeBiddingGroup[] = [];
@@ -167,13 +178,14 @@ function makeMockSnapshot(project: MockProject, grid: MockBidRow[]): ProjectSnap
       projectFolderId: project.folderId,
     });
   }
-  return {
+  return analyzeProjectSync({
     folderId: project.folderId,
     folderName: project.folderName,
     budgetTasks,
     biddingTasks,
     tradeGroups,
-  };
+    syncHealth: emptySyncHealthSummary(),
+  });
 }
 
 // Build a mock snapshot for every project from MATRIX_DATA so the Portfolio

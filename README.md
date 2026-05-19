@@ -42,6 +42,15 @@ opportunistically on dashboard refresh. Implementation: [`lib/clickup/budgetAuto
 Tests: [`lib/clickup/budgetAutomation.test.ts`](./lib/clickup/budgetAutomation.test.ts) — covers MIN-across-children,
 tied minimums, award reversal, and Set-type pinning.
 
+## SOP sync health
+
+The dashboard also runs a read-only Budget → Bidding sync health check. It
+flags SOP issues like missing subcontractors before Trade Type selection,
+Biddable trades without generated Bidding tasks, Set trades with Bidding tasks,
+pending Trade Type, missing Budget Allocated, and unlinked Bidding tasks. These
+show inline in the dashboard and in `/api/budget/refresh` totals, but the app
+does not create or repair ClickUp tasks; `Updated Budget` remains the only write.
+
 ## Local development
 
 ```bash

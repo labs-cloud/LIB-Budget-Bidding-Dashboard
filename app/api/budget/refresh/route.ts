@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
     folderId: string;
     folderName: string;
     writes: number;
+    syncIssues: number;
     warnings: string[];
     error?: string;
   }> = [];
@@ -57,12 +58,19 @@ export async function GET(req: NextRequest) {
           ? await listTasks(budgetListId, { includeClosed: true }).catch(() => [])
           : [];
         const { writes, warnings } = await applyAutomationToProject(snapshot, rawBudget);
-        summary.push({ folderId: folder.id, folderName: snapshot.folderName, writes, warnings });
+        summary.push({
+          folderId: folder.id,
+          folderName: snapshot.folderName,
+          writes,
+          syncIssues: snapshot.syncHealth.total,
+          warnings,
+        });
       } catch (err) {
         summary.push({
           folderId: folder.id,
           folderName: folder.name,
           writes: 0,
+          syncIssues: 0,
           warnings: [],
           error: (err as Error).message,
         });
@@ -76,11 +84,13 @@ export async function GET(req: NextRequest) {
   }
 
   const totalWrites = summary.reduce((s, r) => s + r.writes, 0);
+  const totalSyncIssues = summary.reduce((s, r) => s + r.syncIssues, 0);
   return NextResponse.json({
     ok: true,
     durationMs: Date.now() - startedAt,
     projectsScanned: summary.length,
     totalWrites,
+    totalSyncIssues,
     summary,
   });
 }

@@ -232,7 +232,7 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
 .unified-app .view-tabs button:hover:not(.active) { color: var(--color-text-primary); }
 
 /* KPI strip */
-.unified-app .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 0 0 16px; }
+.unified-app .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 16px; }
 .unified-app .kpi { border-radius: var(--border-radius-md); padding: 12px 14px; }
 .unified-app .kpi.info { background: var(--info-bg); }
 .unified-app .kpi.warn { background: var(--warn-bg); }
@@ -311,7 +311,7 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
 .unified-app table.matrix tbody td.trade-name a.trade-link:hover { background: var(--color-background-primary); color: var(--color-text-info); }
 .unified-app table.matrix tbody td.trade-name a.trade-link:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 1px; }
 .unified-app table.matrix tbody td a.cell-link {
-  display: inline-block; border-radius: 6px; transition: transform .08s ease;
+  display: inline-block; border-radius: 6px; transition: transform .08s ease; position: relative;
 }
 .unified-app table.matrix tbody td a.cell-link:hover { transform: scale(1.06); }
 .unified-app table.matrix tbody td a.cell-link:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 2px; }
@@ -321,6 +321,15 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
 }
 .unified-app table.matrix tbody td.trade-name .ctag.soft { background: var(--bb-soft-bg); color: var(--bb-soft); }
 .unified-app table.matrix tbody td.trade-name .ctag.hard { background: var(--bb-hard-bg); color: var(--bb-hard); }
+.unified-app .sync-dot {
+  position: absolute; top: -4px; right: -4px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--warn-strong); box-shadow: 0 0 0 2px var(--color-background-secondary);
+}
+.unified-app .sync-cell-warn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-fg); font-size: 11px; font-weight: 600;
+}
 
 .unified-app .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--color-text-secondary); margin-top: 14px; }
 .unified-app .legend .sw { display: inline-flex; gap: 6px; align-items: center; }
@@ -438,7 +447,7 @@ html[data-theme='dark'] .unified-app .h-actions .btn.primary { color: #0e1014; }
 }
 .unified-app .project-subtabs button:hover:not(.active) { color: var(--color-text-primary); }
 
-.unified-app .summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }
+.unified-app .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 24px; }
 .unified-app .summary .cell { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 14px 16px; }
 .unified-app .summary .cell .l { font-size: 11px; color: var(--color-text-secondary); }
 .unified-app .summary .cell .v { font-size: 24px; font-weight: 500; letter-spacing: -0.015em; }
@@ -523,6 +532,13 @@ html[data-theme='dark'] .unified-app table.per-trade tbody tr.trade-row:hover td
 .unified-app .td-trade .ctag.hard { background: var(--bb-hard-bg); color: var(--bb-hard); }
 .unified-app .td-trade .name { font-size: 13px; font-weight: 500; display: inline; vertical-align: middle; }
 .unified-app .td-trade .sub-meta { margin-top: 3px; font-size: 11px; color: var(--color-text-tertiary); display: flex; gap: 10px; }
+.unified-app .sync-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; margin-left: 6px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-fg); font-size: 10px; font-weight: 600;
+  vertical-align: middle;
+}
+.unified-app .sync-badge.error { background: var(--danger-bg); color: var(--danger-fg); }
 .unified-app .bid-cell { padding: 4px 6px; }
 .unified-app .bid-card { position: relative; padding: 7px 10px; background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); cursor: pointer; transition: border-color .15s, box-shadow .15s; min-height: 56px; }
 .unified-app .bid-card:hover { border-color: var(--color-border-secondary); }
@@ -554,6 +570,10 @@ html[data-theme='dark'] .unified-app table.per-trade tbody tr.trade-row:hover td
 .unified-app .expand-content .h { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); font-weight: 500; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
 .unified-app .expand-content .h .meta { margin-left: auto; font-size: 11px; color: var(--color-text-secondary); text-transform: none; letter-spacing: 0; }
 .unified-app .mini-gantt { display: flex; flex-direction: column; gap: 4px; }
+.unified-app .sync-issues {
+  margin-top: 12px; padding: 10px 12px; border-radius: var(--border-radius-md);
+  background: var(--warn-bg); color: var(--warn-fg); font-size: 12px; line-height: 1.45;
+}
 .unified-app .mg-row { display: grid; grid-template-columns: 180px 1fr 100px; gap: 10px; align-items: center; }
 .unified-app .mg-axis { grid-column: 2 / 3; position: relative; height: 18px; border-bottom: 0.5px dashed var(--color-border-tertiary); margin-bottom: 2px; }
 .unified-app .mg-axis .tick { position: absolute; top: 0; bottom: 0; font-size: 9px; color: var(--color-text-tertiary); padding-left: 3px; border-left: 0.5px dashed var(--color-border-tertiary); }

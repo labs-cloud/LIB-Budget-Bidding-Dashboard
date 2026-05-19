@@ -109,6 +109,30 @@ export const INELIGIBLE_BID_STATUSES: BiddingStatus[] = [
 
 export type TradeCostType = 'Hard' | 'Soft';
 export type TradeTypeValue = 'Biddable' | 'Set' | 'N/A' | 'Pending';
+export type SyncSeverity = 'info' | 'warning' | 'error';
+export type SyncCategory =
+  | 'trade_type'
+  | 'budget_allocated'
+  | 'subcontractors'
+  | 'bidding_tasks'
+  | 'budget_status'
+  | 'unexpected_bidding'
+  | 'unlinked_bid';
+
+export interface SyncIssue {
+  code: string;
+  severity: SyncSeverity;
+  category: SyncCategory;
+  message: string;
+}
+
+export type SyncStatus = 'ok' | 'warn' | 'error';
+
+export interface SyncHealthSummary {
+  total: number;
+  bySeverity: Record<SyncSeverity, number>;
+  byCategory: Partial<Record<SyncCategory, number>>;
+}
 
 // Canonical Trades list (§11). Cost categorization preserved verbatim.
 export const SOFT_TRADES = [
@@ -264,10 +288,15 @@ export interface BudgetTask {
   costType: TradeCostType;
   budgetAllocated: number | null;
   updatedBudget: number | null;
+  subcontractors: string[];
   budgetStatus: string;
   projectFolder: string;
   projectFolderId: string;
   listId: string;
+  syncStatus: SyncStatus;
+  syncIssues: SyncIssue[];
+  expectedBiddingCount: number;
+  actualBiddingCount: number;
 }
 
 /**
@@ -311,4 +340,5 @@ export interface ProjectSnapshot {
   budgetTasks: BudgetTask[];
   biddingTasks: BiddingTask[];
   tradeGroups: TradeBiddingGroup[];
+  syncHealth: SyncHealthSummary;
 }

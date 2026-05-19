@@ -173,7 +173,7 @@ function Hero({
   const title = inProject && project ? project.folderName : 'Budget Dashboard';
   const activeCount = data.hero.activeProjects;
   const meta = inProject && project
-    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding · {project.summary.set} set · Updated budget {project.summary.updatedBudget}</>
+    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding · {project.summary.set} set · {project.summary.syncIssues} sync issues · Updated budget {project.summary.updatedBudget}</>
     : <><b>{activeCount} of {activeCount} active projects</b> · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
 
   return (
@@ -215,6 +215,7 @@ function PortfolioShell({
         <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">{k.awaitingFollowUp}</div><div className="s">{k.awaitingStale} stale &gt;7d</div></div>
         <div className="kpi good"><div className="l">Ready to award</div><div className="v">{k.readyToAward}</div><div className="s">{k.readyDelta}</div></div>
         <div className="kpi neutral"><div className="l">Trades pending</div><div className="v">{k.tradeTypePending}</div><div className="s">across {k.tradeTypePendingProjects} projects</div></div>
+        <div className="kpi warn"><div className="l">Sync issues</div><div className="v">{k.syncIssues}</div><div className="s">across {k.syncProjects} projects</div></div>
       </div>
 
       {view === 'pf-matrix'
@@ -275,7 +276,12 @@ function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
                     if (!cell.code) {
                       return (
                         <td key={ci}>
-                          <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>—</span>
+                          <span
+                            className={cell.syncIssues > 0 ? 'sync-cell-warn' : ''}
+                            title={cell.syncIssues > 0 ? `${cell.syncIssues} Budget→Bidding sync issue${cell.syncIssues === 1 ? '' : 's'}` : undefined}
+                          >
+                            —
+                          </span>
                         </td>
                       );
                     }
@@ -288,6 +294,7 @@ function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
                           title={`Open ${proj.name} · ${r.trade} (${cell.name ?? cell.code})`}
                         >
                           <span className={`bb-cell-pill ${cell.code.toLowerCase()}`}>{cell.code}</span>
+                          {cell.syncIssues > 0 ? <span className="sync-dot" aria-label={`${cell.syncIssues} sync issues`} /> : null}
                         </a>
                       </td>
                     );
@@ -483,6 +490,7 @@ function ProjectShell({
         <div className="cell warn"><div className="l">In bidding</div><div className="v">{project.summary.bidding}</div></div>
         <div className="cell muted"><div className="l">Set</div><div className="v">{project.summary.set}</div></div>
         <div className="cell money"><div className="l">Updated budget</div><div className="v">{project.summary.updatedBudget}</div></div>
+        <div className="cell warn"><div className="l">Sync issues</div><div className="v">{project.summary.syncIssues}</div></div>
       </div>
 
       <div className="project-subtabs">
@@ -680,7 +688,14 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                     >
                       {t.name}<span className="ext-icon" aria-hidden>↗</span>
                     </a>
-                    <div className="sub-meta">{t.tag} · {t.stage}</div>
+                    {t.syncStatus !== 'ok' ? (
+                      <span className={`sync-badge ${t.syncStatus}`} title={t.syncIssues.join(' ')}>
+                        {t.syncIssues.length}
+                      </span>
+                    ) : null}
+                    <div className="sub-meta">
+                      {t.tag} · {t.stage} · sync {t.actualBiddingCount}/{t.expectedBiddingCount}
+                    </div>
                   </td>
                   <td className="bid-cell"><BidCard bid={t.subs[0]} /></td>
                   <td className="bid-cell"><BidCard bid={t.subs[1]} /></td>
@@ -704,6 +719,11 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                           <span className="meta">{t.subs.filter(Boolean).length} subs · stage = {t.stage}</span>
                         </div>
                         <MiniGantt trade={t} />
+                        {t.syncIssues.length > 0 ? (
+                          <div className="sync-issues">
+                            {t.syncIssues.map((issue) => <div key={issue}>{issue}</div>)}
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
