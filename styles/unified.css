@@ -264,21 +264,33 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
 .unified-app .panel-card .h .meta a { color: var(--color-text-info); cursor: pointer; }
 
 .unified-app .matrix-scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
-.unified-app table.matrix { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.unified-app table.matrix { width: max-content; border-collapse: separate; border-spacing: 0; font-size: 12px; }
 .unified-app table.matrix thead th {
-  padding: 8px 6px; text-align: center;
-  font-size: 10px; font-weight: 500; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--color-text-tertiary);
+  padding: 8px 8px; text-align: center;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
+  /* Keep the underlying text as the raw ClickUp folder name; we use
+     small-caps spacing in CSS instead of text-transform so screen
+     readers and copy-paste get the verbatim value. */
+  color: var(--color-text-secondary);
   background: var(--color-background-secondary);
   border-bottom: 0.5px solid var(--color-border-tertiary);
-  white-space: nowrap; position: sticky; top: 0;
+  white-space: nowrap; position: sticky; top: 0; z-index: 2;
+  min-width: 120px;
 }
-.unified-app table.matrix thead th.col-trade { text-align: left; padding-left: 4px; min-width: 220px; }
-.unified-app table.matrix thead th.col-proj { cursor: pointer; transition: color .12s; }
-.unified-app table.matrix thead th.col-proj:hover { color: var(--color-text-primary); }
-.unified-app table.matrix thead th.col-proj.is-brady { color: var(--lib-orange); font-weight: 600; }
+.unified-app table.matrix thead th.col-trade {
+  text-align: left; padding-left: 4px; min-width: 220px;
+  /* Sticky-left so the trade label stays visible while scrolling 42 columns. */
+  position: sticky; left: 0; z-index: 3;
+  background: var(--color-background-secondary);
+}
+.unified-app table.matrix thead th a.col-proj-link {
+  color: inherit; text-decoration: none; display: inline-block; padding: 2px 4px; border-radius: 4px;
+  transition: color .12s, background .12s;
+}
+.unified-app table.matrix thead th a.col-proj-link:hover { color: var(--color-text-primary); background: var(--color-background-primary); }
+.unified-app table.matrix thead th a.col-proj-link:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 1px; }
 .unified-app table.matrix tbody td {
-  padding: 6px 6px; text-align: center; vertical-align: middle;
+  padding: 6px 8px; text-align: center; vertical-align: middle;
   border-bottom: 0.5px solid var(--color-border-tertiary);
 }
 .unified-app table.matrix tbody tr:last-child td { border-bottom: none; }
@@ -287,7 +299,22 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
   text-align: left; padding-left: 4px; padding-right: 12px;
   font-size: 12.5px; font-weight: 500; color: var(--color-text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+  /* Sticky-left so the trade label stays visible during horizontal scroll.
+     Background must be opaque or rows behind would bleed through. */
+  position: sticky; left: 0; z-index: 1;
+  background: var(--color-background-secondary);
 }
+.unified-app table.matrix tbody tr:hover td.trade-name { background: var(--color-background-primary); }
+.unified-app table.matrix tbody td.trade-name a.trade-link {
+  color: inherit; text-decoration: none; border-radius: 4px; padding: 2px 4px;
+}
+.unified-app table.matrix tbody td.trade-name a.trade-link:hover { background: var(--color-background-primary); color: var(--color-text-info); }
+.unified-app table.matrix tbody td.trade-name a.trade-link:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 1px; }
+.unified-app table.matrix tbody td a.cell-link {
+  display: inline-block; border-radius: 6px; transition: transform .08s ease;
+}
+.unified-app table.matrix tbody td a.cell-link:hover { transform: scale(1.06); }
+.unified-app table.matrix tbody td a.cell-link:focus-visible { outline: 2px solid var(--color-text-info); outline-offset: 2px; }
 .unified-app table.matrix tbody td.trade-name .ctag {
   display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
   padding: 1px 5px; border-radius: 3px; margin-right: 8px; vertical-align: 1px;
@@ -483,7 +510,7 @@ html[data-theme='dark'] .unified-app .tl-card .col-tag { background: var(--color
 .unified-app table.per-trade colgroup col.c-money { width: 110px; }
 .unified-app table.per-trade colgroup col.c-delta { width: 90px; }
 .unified-app table.per-trade colgroup col.c-toggle { width: 32px; }
-.unified-app table.per-trade thead th { padding: 10px 12px; text-align: left; font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); border-bottom: 0.5px solid var(--color-border-tertiary); white-space: nowrap; background: transparent; }
+.unified-app table.per-trade thead th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 500; letter-spacing: 0.02em; color: var(--color-text-secondary); border-bottom: 0.5px solid var(--color-border-tertiary); white-space: nowrap; background: transparent; }
 .unified-app table.per-trade thead th.r { text-align: right; }
 .unified-app table.per-trade thead th.c { text-align: center; }
 .unified-app table.per-trade tbody tr.trade-row td { padding: 10px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); vertical-align: middle; background: transparent; transition: background-color .12s; }
@@ -554,4 +581,30 @@ html[data-theme='dark'] .unified-app table.per-trade tbody tr.trade-row:hover td
   text-align: center;
   font-size: 11px;
   color: var(--color-text-tertiary);
+}
+
+/* Clickable rows + external-link icon (Pass 3 — navigation) */
+.unified-app .row-link {
+  color: inherit; text-decoration: none; display: block; cursor: pointer;
+}
+.unified-app .row-link:focus-visible,
+.unified-app a.ext:focus-visible,
+.unified-app button.ext:focus-visible {
+  outline: 2px solid var(--color-text-info); outline-offset: 2px;
+}
+.unified-app .ext-icon {
+  display: inline-block; margin-left: 4px;
+  font-size: 0.85em; opacity: 0.55; transition: opacity .12s;
+  vertical-align: 1px;
+}
+.unified-app a.ext:hover .ext-icon,
+.unified-app button.ext:hover .ext-icon,
+.unified-app .row-link:hover .ext-icon { opacity: 1; }
+.unified-app .row-highlight {
+  animation: rowFlash 1600ms ease-out;
+}
+@keyframes rowFlash {
+  0%   { background: rgba(0,145,255,0.18); }
+  60%  { background: rgba(0,145,255,0.10); }
+  100% { background: transparent; }
 }

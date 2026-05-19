@@ -37,12 +37,18 @@ interface Props {
   embed?: boolean;
   initialProjectId?: string | null;
   initialView?: string | null;
+  /** Trade name pulled from ?trade= on the per-project route. Scrolls to and flashes that row. */
+  initialTrade?: string | null;
 }
 
-export function UnifiedDashboard({ data, embed = false, initialProjectId = null, initialView = null }: Props) {
+export function UnifiedDashboard({ data, embed = false, initialProjectId = null, initialView = null, initialTrade = null }: Props) {
   const [view, setView] = useState<View>(() => {
     if (initialView && [...PORTFOLIO_VIEWS, ...PROJECT_VIEWS].includes(initialView as View)) return initialView as View;
-    return initialProjectId ? 'pj-timeline' : 'pf-matrix';
+    // If we landed on a per-project URL with a ?trade= focus, default to the
+    // per-trade matrix view since that's where trade rows live and the
+    // scroll-to-row target is rendered.
+    if (initialProjectId) return initialTrade ? 'pj-matrix' : 'pj-timeline';
+    return 'pf-matrix';
   });
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -86,16 +92,6 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
     setTheme(next);
     document.documentElement.setAttribute('data-theme', next);
     try { localStorage.setItem('bb-theme', next); } catch { /* ignore */ }
-  }
-
-  function openProject(folderId: string, target: ProjectView = 'pj-timeline') {
-    setProjectId(folderId);
-    setView(target);
-  }
-
-  function backToPortfolio(target: PortfolioView = 'pf-matrix') {
-    setProjectId(null);
-    setView(target);
   }
 
   return (
@@ -143,9 +139,9 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
         ) : null}
 
         {!inProject ? (
-          <PortfolioShell data={data} view={view as PortfolioView} onOpenProject={openProject} />
+          <PortfolioShell data={data} view={view as PortfolioView} />
         ) : project ? (
-          <ProjectShell project={project} view={view as ProjectView} onChange={(v) => setView(v)} onBack={() => backToPortfolio()} />
+          <ProjectShell project={project} view={view as ProjectView} onChange={(v) => setView(v)} initialTrade={initialTrade} />
         ) : (
           <p style={{ color: 'var(--color-text-secondary)' }}>Project not found.</p>
         )}
@@ -175,9 +171,10 @@ function Hero({
   onToggleTheme: () => void;
 }) {
   const title = inProject && project ? project.folderName : 'Budget Dashboard';
+  const activeCount = data.hero.activeProjects;
   const meta = inProject && project
     ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding · {project.summary.set} set · Updated budget {project.summary.updatedBudget}</>
-    : <><b>{data.hero.inFlight} bids in flight</b> across {data.hero.activeProjects} of {data.hero.totalFolders} · projects with active bidding · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
+    : <><b>{activeCount} of {activeCount} active projects</b> · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
 
   return (
     <div className="lib-hero">
@@ -208,8 +205,8 @@ function Hero({
 // ----------------------------------------------------------------------------
 
 function PortfolioShell({
-  data, view, onOpenProject,
-}: { data: UnifiedPortfolio; view: PortfolioView; onOpenProject: (folderId: string) => void }) {
+  data, view,
+}: { data: UnifiedPortfolio; view: PortfolioView }) {
   const k = data.kpis;
   return (
     <>
@@ -221,15 +218,17 @@ function PortfolioShell({
       </div>
 
       {view === 'pf-matrix'
-        ? <PortfolioMatrix data={data} onOpenProject={onOpenProject} />
+        ? <PortfolioMatrix data={data} />
         : <PortfolioGantt data={data} />}
     </>
   );
 }
 
-function PortfolioMatrix({
-  data, onOpenProject,
-}: { data: UnifiedPortfolio; onOpenProject: (folderId: string) => void }) {
+function slugifyTrade(t: string): string {
+  return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
   const stale = data.stale;
   return (
     <div className="body-wrap">
@@ -246,13 +245,14 @@ function PortfolioMatrix({
               <tr>
                 <th className="col-trade">Trade</th>
                 {data.matrix.projects.map((p) => (
-                  <th
-                    key={p.folderId}
-                    className="col-proj"
-                    onClick={() => onOpenProject(p.folderId)}
-                    title={p.full}
-                  >
-                    {p.short}
+                  <th key={p.folderId} className="col-proj">
+                    <a
+                      href={`/project/${encodeURIComponent(p.folderId)}`}
+                      className="col-proj-link"
+                      title={`Open ${p.name}`}
+                    >
+                      {p.name}
+                    </a>
                   </th>
                 ))}
               </tr>
@@ -262,17 +262,36 @@ function PortfolioMatrix({
                 <tr key={r.trade}>
                   <td className="trade-name" title={r.trade}>
                     <span className={`ctag ${r.cost}`}>{r.cost === 'hard' ? 'H' : 'S'}</span>
-                    {r.trade}
+                    <a
+                      href={`/trade/${encodeURIComponent(r.trade)}`}
+                      className="trade-link"
+                      title={`Open ${r.trade} cross-portfolio view`}
+                    >
+                      {r.trade}
+                    </a>
                   </td>
-                  {r.cells.map((cell, ci) => (
-                    <td key={ci}>
-                      {cell.code ? (
-                        <span className={`bb-cell-pill ${cell.code.toLowerCase()}`} title={cell.name ?? ''}>{cell.code}</span>
-                      ) : (
-                        <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>—</span>
-                      )}
-                    </td>
-                  ))}
+                  {r.cells.map((cell, ci) => {
+                    const proj = data.matrix.projects[ci];
+                    if (!cell.code) {
+                      return (
+                        <td key={ci}>
+                          <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>—</span>
+                        </td>
+                      );
+                    }
+                    const href = `/project/${encodeURIComponent(proj.folderId)}?trade=${encodeURIComponent(r.trade)}#trade-row-${slugifyTrade(r.trade)}`;
+                    return (
+                      <td key={ci}>
+                        <a
+                          href={href}
+                          className="cell-link"
+                          title={`Open ${proj.name} · ${r.trade} (${cell.name ?? cell.code})`}
+                        >
+                          <span className={`bb-cell-pill ${cell.code.toLowerCase()}`}>{cell.code}</span>
+                        </a>
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -301,13 +320,20 @@ function PortfolioMatrix({
           ) : stale.map((b) => {
             const crit = b.days >= 12;
             return (
-              <a key={`${b.sub}-${b.project}-${b.trade}`} href="#" className={`row${crit ? ' critical' : ''}`}>
+              <a
+                key={`${b.sub}-${b.projectFolderId}-${b.trade}`}
+                href={b.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`row${crit ? ' critical' : ''}`}
+                title={`Open ${b.sub} (${b.trade}) bid in ClickUp (new tab)`}
+              >
                 <div className="when">
                   <div className="d">{b.days}</div>
                   <div className="mo">days</div>
                 </div>
                 <div className="info">
-                  <div className="trade">{b.trade}</div>
+                  <div className="trade">{b.trade}<span className="ext-icon" aria-hidden>↗</span></div>
                   <div className="name">{b.sub}</div>
                   <div className="proj">{b.project} · last update {b.rfp}</div>
                 </div>
@@ -411,14 +437,14 @@ function GanttRowEl({ row, todayPct }: { row: GanttRow; todayPct: number }) {
 // ----------------------------------------------------------------------------
 
 function ProjectShell({
-  project, view, onChange, onBack,
-}: { project: UnifiedProject; view: ProjectView; onChange: (v: View) => void; onBack: () => void }) {
+  project, view, onChange, initialTrade,
+}: { project: UnifiedProject; view: ProjectView; onChange: (v: View) => void; initialTrade: string | null }) {
   return (
     <>
       <div className="crumb">
-        <a onClick={onBack} href="#pf-matrix">← Budget &amp; Bidding</a>
+        <a href="/">← Budget &amp; Bidding</a>
         <Icon name="chevron-right" />
-        <a onClick={onBack} href="#pf-matrix">Portfolio</a>
+        <a href="/">Portfolio</a>
         <Icon name="chevron-right" />
         <span>{project.folderName}</span>
       </div>
@@ -434,8 +460,16 @@ function ProjectShell({
           </div>
         </div>
         <div className="h-actions">
-          <button className="btn" type="button"><Icon name="folder" size={14} /> ClickUp folder</button>
-          <button className="btn primary" type="button"><Icon name="external-link" size={14} /> Open in ClickUp</button>
+          <a
+            className="btn primary ext"
+            href={project.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Open ${project.folderName} folder in ClickUp (new tab)`}
+          >
+            <Icon name="external-link" size={14} /> Open in ClickUp
+            <span className="ext-icon" aria-hidden>↗</span>
+          </a>
         </div>
       </header>
 
@@ -456,7 +490,7 @@ function ProjectShell({
         </button>
       </div>
 
-      {view === 'pj-timeline' ? <ProjectTimeline project={project} /> : <ProjectMatrix project={project} />}
+      {view === 'pj-timeline' ? <ProjectTimeline project={project} /> : <ProjectMatrix project={project} initialTrade={initialTrade} />}
     </>
   );
 }
@@ -475,24 +509,37 @@ function ProjectTimeline({ project }: { project: UnifiedProject }) {
             {g.rows.map((r) => {
               const [pillCls, pillCode, pillName] = STATUS_PILL_FOR_TIMELINE[r.stat];
               const amountLabel = r.stat === 'set' ? 'Amount' : r.stat === 'lv' ? 'Lowest' : 'Bid';
+              const tlCardInner = (
+                <div className={`tl-card ${r.stat}`}>
+                  <div className="top">
+                    <span className="col-tag">{r.tag}</span>
+                    <span className="name">{r.name}{r.url ? <span className="ext-icon" aria-hidden>↗</span> : null}</span>
+                    <span className={`bb-pill ${pillCls}`}>
+                      <span className="code">{pillCode}</span>{pillName}
+                    </span>
+                  </div>
+                  <div className="meta">
+                    <span className="sub-name">{r.sub}</span>
+                    {r.amt ? <span><span className="label">{amountLabel}</span> <span className="amt">{r.amt}</span></span> : null}
+                    <span><span className="label">Allocated</span> {r.alloc}</span>
+                    {r.rfp ? <span><span className="label">RFP</span> {r.rfp}</span> : null}
+                  </div>
+                </div>
+              );
               return (
                 <div key={`${r.name}-${r.date}`} className={`tl-row ${r.stat}`}>
                   <div className={`tl-date${r.warn ? ' warn' : ''}`}>{r.date}</div>
-                  <div className={`tl-card ${r.stat}`}>
-                    <div className="top">
-                      <span className="col-tag">{r.tag}</span>
-                      <span className="name">{r.name}</span>
-                      <span className={`bb-pill ${pillCls}`}>
-                        <span className="code">{pillCode}</span>{pillName}
-                      </span>
-                    </div>
-                    <div className="meta">
-                      <span className="sub-name">{r.sub}</span>
-                      {r.amt ? <span><span className="label">{amountLabel}</span> <span className="amt">{r.amt}</span></span> : null}
-                      <span><span className="label">Allocated</span> {r.alloc}</span>
-                      {r.rfp ? <span><span className="label">RFP</span> {r.rfp}</span> : null}
-                    </div>
-                  </div>
+                  {r.url ? (
+                    <a
+                      className="row-link"
+                      href={r.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${r.name} in ClickUp (new tab)`}
+                    >
+                      {tlCardInner}
+                    </a>
+                  ) : tlCardInner}
                 </div>
               );
             })}
@@ -506,16 +553,23 @@ function ProjectTimeline({ project }: { project: UnifiedProject }) {
           {project.inFlight.length === 0 ? (
             <div style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>No in-flight bids.</div>
           ) : project.inFlight.map((b) => (
-            <div key={`${b.sub}-${b.trade}`} className={`bif-card${b.crit ? ' critical' : ''}`}>
+            <a
+              key={`${b.sub}-${b.trade}`}
+              href={b.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`bif-card row-link${b.crit ? ' critical' : ''}`}
+              title={`Open ${b.sub} (${b.trade}) bid in ClickUp (new tab)`}
+            >
               <div className="top">
                 <div>
-                  <div className="trade-tag">{b.trade}</div>
+                  <div className="trade-tag">{b.trade}<span className="ext-icon" aria-hidden>↗</span></div>
                   <div className="sub">{b.sub}</div>
                 </div>
                 <span className="countdown">{b.days}</span>
               </div>
               <div className="meta">{b.meta}</div>
-            </div>
+            </a>
           ))}
         </div>
         <div className="panel">
@@ -554,8 +608,9 @@ function ProjectTimeline({ project }: { project: UnifiedProject }) {
   );
 }
 
-function ProjectMatrix({ project }: { project: UnifiedProject }) {
+function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; initialTrade: string | null }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [highlightedSlug, setHighlightedSlug] = useState<string | null>(null);
 
   function toggle(i: number) {
     setExpanded((prev) => {
@@ -565,6 +620,19 @@ function ProjectMatrix({ project }: { project: UnifiedProject }) {
       return next;
     });
   }
+
+  // Honour ?trade=<name> by scrolling to that trade row and flashing it.
+  // Slug match means we don't depend on exact-case casing from the URL.
+  useEffect(() => {
+    if (!initialTrade) return;
+    const slug = slugifyTrade(initialTrade);
+    const el = typeof document !== 'undefined' ? document.getElementById(`trade-row-${slug}`) : null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedSlug(slug);
+    const t = window.setTimeout(() => setHighlightedSlug(null), 1700);
+    return () => window.clearTimeout(t);
+  }, [initialTrade]);
 
   return (
     <div className="table-card">
@@ -586,12 +654,28 @@ function ProjectMatrix({ project }: { project: UnifiedProject }) {
             </tr>
           </thead>
           <tbody>
-            {project.ptTrades.map((t, i) => (
+            {project.ptTrades.map((t, i) => {
+              const slug = slugifyTrade(t.name);
+              const isHighlighted = slug === highlightedSlug;
+              return (
               <FragmentBlock key={t.name}>
-                <tr className={`trade-row${expanded.has(i) ? ' expanded' : ''}`} onClick={() => toggle(i)}>
+                <tr
+                  id={`trade-row-${slug}`}
+                  className={`trade-row${expanded.has(i) ? ' expanded' : ''}${isHighlighted ? ' row-highlight' : ''}`}
+                  onClick={() => toggle(i)}
+                >
                   <td className="td-trade">
                     <span className={`ctag ${t.cost}`}>{t.cost === 'hard' ? 'H' : 'S'}</span>
-                    <span className="name">{t.name}</span>
+                    <a
+                      className="name ext"
+                      href={t.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${t.name} budget task in ClickUp (new tab)`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {t.name}<span className="ext-icon" aria-hidden>↗</span>
+                    </a>
                     <div className="sub-meta">{t.tag} · {t.stage}</div>
                   </td>
                   <td className="bid-cell"><BidCard bid={t.subs[0]} /></td>
@@ -621,7 +705,8 @@ function ProjectMatrix({ project }: { project: UnifiedProject }) {
                   </tr>
                 ) : null}
               </FragmentBlock>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -633,15 +718,22 @@ function BidCard({ bid }: { bid: PtSub | null | undefined }) {
   if (!bid) return <div className="bid-card empty">—</div>;
   const cls = 'bid-card' + (bid.isLow ? ' is-low' : '');
   return (
-    <div className={cls} title={`${bid.name} · ${STATUS_NAMES[bid.status]}`}>
-      <div className="sub-name">{bid.name}</div>
+    <a
+      className={cls}
+      title={`Open ${bid.name} bid in ClickUp (new tab) · ${STATUS_NAMES[bid.status]}`}
+      href={bid.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="sub-name">{bid.name}<span className="ext-icon" aria-hidden>↗</span></div>
       <div className="row2">
         <span className={`bb-pill ${bid.status.toLowerCase()}`}><span className="code">{bid.status}</span></span>
         {bid.amount == null
           ? <span className="amt dim">awaiting</span>
           : <span className="amt">{fmtShort(bid.amount)}</span>}
       </div>
-    </div>
+    </a>
   );
 }
 

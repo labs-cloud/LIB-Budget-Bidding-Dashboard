@@ -114,17 +114,29 @@ case-folding and dash/typo normalization. Unknown values log a
 ### Project folder → Master Projects Board cross-reference
 The folder name must match the `name` of the corresponding record in Master Projects Board list `901710536629` (Resources space). Existing Make scenarios depend on this. The dashboard does not need to write to Master Projects Board but should surface a warning banner if a Budget task's project folder name doesn't have a matching Master record.
 
-### Portfolio matrix scope — active-bidding filter
-The Active Projects space (`90173230172`) contains every project folder ever
-created (~42 today). Most have no bids and no positive budget allocations —
-they're shells from the SOP's "create the folder day one" rule. To keep the
-matrix readable, `buildUnifiedPortfolio()` filters snapshots to those where
-**either** `biddingTasks.length > 0` **or** at least one `budgetTask` has
-`budgetAllocated > 0`. Empty folders are hidden as noise; the dashboard
-header reads `N of M · projects with active bidding` so the denominator is
-visible and folders are not silently dropped. KPIs (in-flight, awaiting
-follow-up, ready-to-award, Trade Type pending) and the per-project gantt
-all derive from the filtered subset.
+### Portfolio matrix scope — show every folder
+Every folder under the Active Projects space (`90173230172`) renders as a
+column, including folders with no bidding activity yet. Empty folders
+render as columns full of `—` cells, signalling "this project hasn't
+started bidding yet" rather than being silently dropped. The header
+reads `N of N active projects · live from ClickUp` (matching the P&P
+dashboard convention). Trade-Type-pending KPI counts only budget tasks
+where `tradeType === 'Pending'` (the literal dropdown value); null /
+unset tradeType doesn't inflate the count.
+
+### Click-through navigation
+- Matrix column header → `/project/[folderId]` (full page nav, deep-linkable)
+- Matrix status pill → `/project/[folderId]?trade=<name>#trade-row-<slug>`
+  (lands on the per-trade matrix view and scrolls/flashes the row)
+- Matrix trade row label → `/trade/[name]` (placeholder for the
+  cross-portfolio trade view; build-out in a follow-up PR)
+- Per-project budget rows, bid sub-cards, timeline cards, in-flight cards,
+  stale-list rows, and the project's "Open in ClickUp" button all
+  `target="_blank" rel="noopener noreferrer"` to the ClickUp task's own
+  `url` field (`task.url` from the API — never constructed by hand).
+  Folder URLs for the project header button are constructed once from
+  the workspace constant in `lib/unifiedTransform.ts` since the API
+  doesn't expose folder URLs.
 
 ## 4. Views to build (priority order)
 
