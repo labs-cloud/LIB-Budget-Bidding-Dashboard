@@ -66,20 +66,35 @@ Replace Brady's `All Jobs Status (Bidding Status).csv` (portfolio scan) and per-
 3. `Budget Set` (Trade Type = Set)
 4. `Bid List Confirmed` (a child Bidding task hit `Awarded`)
 
+Note: ClickUp's `/list/{id}/task` API returns workflow status values
+**lowercased** (e.g. `"to budget"`, `"open for bidding"`). Match
+case-insensitively in code.
+
 ### `02. Bidding` task statuses — the 9-stage list (verbatim, in order)
 1. `Not Started`
 2. `RFP Sent`
 3. `Followed Up`
-4. `Bid Received`
+4. `Bid Received` — **stored in ClickUp as the misspelling `Bid Recieved`**;
+   `normalizeBiddingStatus()` maps both spellings to the canonical
+   correctly-spelled form.
 5. `Leveling`
-6. `Leveled - Pending Review`
+6. `Leveled - Pending Review` — some folders use an em-dash
+   (`Leveled — Pending Review`); the normalizer collapses em-/en-dashes
+   to the hyphen form.
 7. `Needs Rebid`
 8. `No Bid / Declined`
 9. `Awarded`
 
+Workflow status values come back from the API lowercased (`"not started"`,
+`"awarded"`, etc.); `normalizeBiddingStatus()` is responsible for both
+case-folding and dash/typo normalization. Unknown values log a
+`console.warn` and return `null` so future drift is visible in logs.
+
 ### `01. Budget` custom fields read
 - `Trades` — dropdown, 66 options (the Official Trades list — see §11 below)
-- `Trade Type` — `Biddable` | `Set` (only two options)
+- `Trade Type` — `Biddable` | `Set` | `N/A` | `Pending` (four options live in
+  ClickUp; SOP only documents the first two but the dashboard handles all
+  four). Both `null` and `Pending` count as "Trade Type pending".
 - `Cost Type` — `Hard Costs` | `Soft Costs` (pre-filled; do not edit)
 - `Budget Allocated` — currency (original approved estimate)
 - `Updated Budget` — currency (auto-written by the lowest-bid automation — see §6)
@@ -98,6 +113,18 @@ Replace Brady's `All Jobs Status (Bidding Status).csv` (portfolio scan) and per-
 
 ### Project folder → Master Projects Board cross-reference
 The folder name must match the `name` of the corresponding record in Master Projects Board list `901710536629` (Resources space). Existing Make scenarios depend on this. The dashboard does not need to write to Master Projects Board but should surface a warning banner if a Budget task's project folder name doesn't have a matching Master record.
+
+### Portfolio matrix scope — active-bidding filter
+The Active Projects space (`90173230172`) contains every project folder ever
+created (~42 today). Most have no bids and no positive budget allocations —
+they're shells from the SOP's "create the folder day one" rule. To keep the
+matrix readable, `buildUnifiedPortfolio()` filters snapshots to those where
+**either** `biddingTasks.length > 0` **or** at least one `budgetTask` has
+`budgetAllocated > 0`. Empty folders are hidden as noise; the dashboard
+header reads `N of M · projects with active bidding` so the denominator is
+visible and folders are not silently dropped. KPIs (in-flight, awaiting
+follow-up, ready-to-award, Trade Type pending) and the per-project gantt
+all derive from the filtered subset.
 
 ## 4. Views to build (priority order)
 

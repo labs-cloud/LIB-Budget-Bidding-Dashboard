@@ -56,13 +56,47 @@ export const STATUS_PILL: Record<
   ND: { bg: '#e5484d', fg: 'white', name: 'No Bid / Declined' },
 };
 
-// Status normalization — ClickUp sometimes returns lowercased names.
+// Status normalization. ClickUp returns task workflow statuses lowercased
+// (e.g. "not started", "rfp sent", "awarded") and the source-of-truth
+// dropdown in the Bidding list contains a couple of spellings that don't
+// round-trip cleanly:
+//   - "Bid Recieved" (misspelled in ClickUp; verified in workspace
+//     9017603275 against the Bid task dropdown). Both the misspelling and
+//     the correct spelling map to canonical "Bid Received".
+//   - "Leveled — Pending Review" uses an em-dash in some folders and a
+//     hyphen-space-hyphen in others; both must collapse to the canonical
+//     "Leveled - Pending Review".
+// Unknown values return null and log to console.warn so we catch drift.
+const BIDDING_ALIASES: Record<string, BiddingStatus> = (() => {
+  const map: Record<string, BiddingStatus> = {};
+  const add = (raw: string, canonical: BiddingStatus) => {
+    map[normalizeKey(raw)] = canonical;
+  };
+  for (const s of BIDDING_STATUSES) add(s, s);
+  // Misspelling preserved verbatim in ClickUp.
+  add('Bid Recieved', 'Bid Received');
+  // Em-dash and en-dash variants (already normalized by normalizeKey, but
+  // listing them here documents the live values we've seen).
+  add('Leveled — Pending Review', 'Leveled - Pending Review');
+  add('Leveled – Pending Review', 'Leveled - Pending Review');
+  return map;
+})();
+
+function normalizeKey(s: string): string {
+  return s
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function normalizeBiddingStatus(s: string | undefined | null): BiddingStatus | null {
   if (!s) return null;
-  const lower = s.trim().toLowerCase();
-  for (const status of BIDDING_STATUSES) {
-    if (status.toLowerCase() === lower) return status;
-  }
+  const key = normalizeKey(s);
+  const hit = BIDDING_ALIASES[key];
+  if (hit) return hit;
+  // Surface drift instead of silently returning null.
+  console.warn(`[normalizeBiddingStatus] unknown bidding status: ${JSON.stringify(s)}`);
   return null;
 }
 
@@ -74,7 +108,7 @@ export const INELIGIBLE_BID_STATUSES: BiddingStatus[] = [
 ];
 
 export type TradeCostType = 'Hard' | 'Soft';
-export type TradeTypeValue = 'Biddable' | 'Set' | 'N/A';
+export type TradeTypeValue = 'Biddable' | 'Set' | 'N/A' | 'Pending';
 
 // Canonical Trades list (§11). Cost categorization preserved verbatim.
 export const SOFT_TRADES = [

@@ -292,6 +292,7 @@ function normalizeTradeType(raw: string | null): TradeTypeValue | null {
   if (v === 'biddable') return 'Biddable';
   if (v === 'set') return 'Set';
   if (v === 'n/a' || v === 'na') return 'N/A';
+  if (v === 'pending') return 'Pending';
   return null;
 }
 

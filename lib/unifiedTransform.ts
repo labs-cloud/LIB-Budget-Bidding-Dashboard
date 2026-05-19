@@ -31,6 +31,7 @@ export interface UnifiedPortfolio {
   hero: {
     inFlight: number;
     activeProjects: number;
+    totalFolders: number;
   };
   kpis: {
     inFlight: number; inFlightDelta: string;
@@ -364,7 +365,10 @@ export function buildUnifiedPortfolio(input: {
   const pendingProjects = new Set<string>();
   for (const s of snapshots) {
     for (const bt of s.budgetTasks) {
-      if (bt.tradeType != null) continue;
+      // ClickUp now exposes an explicit "Pending" Trade Type option — count
+      // both that and unset (null) as still-pending classification.
+      const pending = bt.tradeType == null || bt.tradeType === 'Pending';
+      if (!pending) continue;
       // Skip placeholder budget tasks that have no allocation yet — they're
       // shells the SOP creates before a project enters bidding.
       if ((bt.budgetAllocated ?? 0) <= 0) continue;
@@ -423,7 +427,7 @@ export function buildUnifiedPortfolio(input: {
     refreshedAt,
     refreshedAgo,
     warnings,
-    hero: { inFlight, activeProjects: snapshots.length },
+    hero: { inFlight, activeProjects: snapshots.length, totalFolders: allSnapshots.length },
     kpis: {
       inFlight, inFlightDelta: 'across all trades',
       awaitingFollowUp, awaitingStale,

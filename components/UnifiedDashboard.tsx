@@ -177,7 +177,7 @@ function Hero({
   const title = inProject && project ? project.folderName : 'Budget Dashboard';
   const meta = inProject && project
     ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding · {project.summary.set} set · Updated budget {project.summary.updatedBudget}</>
-    : <><b>{data.hero.inFlight} bids in flight</b> across {data.hero.activeProjects} active projects · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
+    : <><b>{data.hero.inFlight} bids in flight</b> across {data.hero.activeProjects} of {data.hero.totalFolders} · projects with active bidding · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
 
   return (
     <div className="lib-hero">
