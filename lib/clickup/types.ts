@@ -229,6 +229,7 @@ export const BUDGET_FIELDS = {
 } as const;
 
 export const BIDDING_FIELDS = {
+  BiddingStatus: 'Bidding Status',
   Trade: 'Trade',
   TradeList: 'Trade List',
   BidContractedAmount: 'Bid/Contracted Amount',

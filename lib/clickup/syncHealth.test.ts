@@ -77,11 +77,11 @@ describe('analyzeProjectSync', () => {
     expect(analyzed.syncHealth.total).toBe(0);
   });
 
-  it('warns before expecting Bidding tasks when a Biddable trade has no subcontractors', () => {
+  it('does not treat pre-bidding missing subcontractors as a sync issue', () => {
     const analyzed = analyzeProjectSync(snapshot([budget({ subcontractors: [] })], []));
 
-    expect(analyzed.budgetTasks[0].syncStatus).toBe('warn');
-    expect(analyzed.budgetTasks[0].syncIssues.map((i) => i.code)).toContain('missing_subcontractors');
+    expect(analyzed.budgetTasks[0].syncStatus).toBe('ok');
+    expect(analyzed.budgetTasks[0].syncIssues).toHaveLength(0);
     expect(analyzed.budgetTasks[0].expectedBiddingCount).toBe(0);
   });
 
@@ -103,7 +103,7 @@ describe('analyzeProjectSync', () => {
     expect(analyzed.budgetTasks[0].syncIssues.map((i) => i.code)).toContain('set_trade_has_bidding_tasks');
   });
 
-  it('warns on Pending and null Trade Type values', () => {
+  it('does not count Pending and null Trade Type values as broken sync', () => {
     const analyzed = analyzeProjectSync(
       snapshot([
         budget({ id: 'pending', trade: 'HVAC', tradeType: 'Pending' }),
@@ -111,9 +111,20 @@ describe('analyzeProjectSync', () => {
       ], [])
     );
 
-    expect(analyzed.budgetTasks[0].syncIssues.map((i) => i.code)).toContain('trade_type_pending');
-    expect(analyzed.budgetTasks[1].syncIssues.map((i) => i.code)).toContain('trade_type_pending');
+    expect(analyzed.budgetTasks[0].syncIssues).toHaveLength(0);
+    expect(analyzed.budgetTasks[1].syncIssues).toHaveLength(0);
     expect(analyzed.budgetTasks[0].expectedBiddingCount).toBe(0);
     expect(analyzed.budgetTasks[1].expectedBiddingCount).toBe(0);
+  });
+
+  it('warns when bidding has started but Budget Allocated is missing', () => {
+    const analyzed = analyzeProjectSync(
+      snapshot([budget({ budgetAllocated: null })], [
+        bid({ subcontractor: 'Acme Mechanical' }),
+        bid({ id: 'b2', subcontractor: 'Beta Air' }),
+      ])
+    );
+
+    expect(analyzed.budgetTasks[0].syncIssues.map((i) => i.code)).toContain('missing_budget_allocated');
   });
 });

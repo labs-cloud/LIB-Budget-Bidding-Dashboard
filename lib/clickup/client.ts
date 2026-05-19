@@ -179,6 +179,46 @@ export function readLabelsField(task: CUTask, name: string): string[] {
     .filter((s): s is string => !!s);
 }
 
+function uniqueNames(names: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of names) {
+    const name = raw?.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
+// ClickUp relation/label fields vary between workspaces. This reads the common
+// shapes without assuming the field type is labels-only.
+function readReferenceNamesField(task: CUTask, name: string): string[] {
+  const f = findField(task, name);
+  if (!f || f.value == null || f.value === '') return [];
+  if (Array.isArray(f.value)) {
+    const options: any[] = f.type_config?.options ?? [];
+    return uniqueNames(
+      f.value.map((v) => {
+        if (typeof v === 'string') {
+          const opt = options.find((o) => o.id === v || o.label === v || o.name === v);
+          return opt?.name ?? opt?.label ?? v;
+        }
+        if (v && typeof v === 'object') {
+          return v.name ?? v.label ?? v.username ?? v.email ?? v.id ?? null;
+        }
+        return null;
+      })
+    );
+  }
+  if (typeof f.value === 'object') {
+    return uniqueNames([f.value.name, f.value.label, f.value.username, f.value.email]);
+  }
+  return uniqueNames([String(f.value)]);
+}
+
 // ---------- Writes ----------
 
 export async function setCustomField(
@@ -201,11 +241,12 @@ export async function postTaskComment(taskId: string, text: string): Promise<voi
 
 // ---------- Domain shaping ----------
 //
-// Live ClickUp contract (verified against the workspace):
+// Live ClickUp contract:
 //  - `01. Budget` holds one Trade task per trade as a top-level task
 //    (parent == null). It also contains unrelated subtasks we ignore.
-//  - `02. Bidding` holds one trade-group task per trade (parent == null) and
-//    one bid subtask per subcontractor (parent == <trade-group id>).
+//  - `02. Bidding` may hold either top-level subcontractor bid tasks (per the
+//    SOP) or top-level trade-group tasks with subcontractor bids as children
+//    (seen in earlier workspace snapshots). We support both.
 //  - Bids join to Budget tasks by trade NAME — they live in different lists
 //    with no shared parent.
 
@@ -254,7 +295,8 @@ export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
     .map((t) => shapeBudgetTask(t, folder.name, folder.id))
     .filter((bt): bt is BudgetTask => bt !== null);
 
-  // Bidding: trade-group tasks are parent == null; bids are their children.
+  // Bidding: support both SOP shape (one top-level task per subcontractor)
+  // and grouped shape (top-level trade rows with bid subtasks).
   const tradeGroupTasks = biddingRaw.filter((t) => t.parent == null);
   const groupTradeById = new Map<string, string | null>(
     tradeGroupTasks.map((t) => [t.id, resolveTrade(t)])
@@ -273,9 +315,7 @@ export async function loadProject(folderId: string): Promise<ProjectSnapshot> {
     .filter((g): g is TradeBiddingGroup => g !== null);
 
   const biddingTasks: BiddingTask[] = biddingRaw
-    // A bid is a direct child of a top-level trade-group task. Deeper
-    // sub-subtasks (change orders etc.) are skipped.
-    .filter((t) => t.parent != null && groupTradeById.has(t.parent))
+    .filter((t) => isBiddingBidTask(t, groupTradeById))
     .map((t) => shapeBiddingTask(t, folder.name, folder.id, groupTradeById));
 
   return analyzeProjectSync({
@@ -320,7 +360,7 @@ export function shapeBudgetTask(
     costType,
     budgetAllocated: readNumberField(task, BUDGET_FIELDS.BudgetAllocated),
     updatedBudget: readNumberField(task, BUDGET_FIELDS.UpdatedBudget),
-    subcontractors: readLabelsField(task, BUDGET_FIELDS.Subcontractors),
+    subcontractors: readReferenceNamesField(task, BUDGET_FIELDS.Subcontractors),
     budgetStatus: task.status?.status ?? '',
     projectFolder: folderName,
     projectFolderId: folderId,
@@ -347,6 +387,26 @@ function readSubcontractor(task: CUTask): { name: string; url: string | null } {
   return { name: task.name, url: null };
 }
 
+function hasSubcontractorSignal(task: CUTask): boolean {
+  const sub = readSubcontractor(task).name.trim();
+  const trade = resolveTrade(task);
+  return !!sub && (!trade || sub.toLowerCase() !== trade.toLowerCase());
+}
+
+function isBiddingBidTask(
+  task: CUTask,
+  groupTradeById: Map<string, string | null>
+): boolean {
+  if (task.parent != null) {
+    return groupTradeById.has(task.parent);
+  }
+  const trade = resolveTrade(task);
+  if (!trade) return false;
+  // A canonical trade-name task is a group row, not a subcontractor bid.
+  if (tradeKey(task.name) === tradeKey(trade)) return false;
+  return hasSubcontractorSignal(task);
+}
+
 /**
  * Derive the 9-stage bidding status for a bid subtask. The live workspace
  * does not drive the workflow status (every bid sits at "Not Started"), so we
@@ -358,6 +418,10 @@ function deriveBidStatus(
   awardDate: string | null,
   bidAmount: number | null
 ): { status: BiddingStatus; derived: boolean } {
+  const fieldStatus = normalizeBiddingStatus(readDropdownField(task, BIDDING_FIELDS.BiddingStatus));
+  if (fieldStatus) {
+    return { status: fieldStatus, derived: false };
+  }
   const workflow = normalizeBiddingStatus(task.status?.status);
   if (workflow && workflow !== 'Not Started') {
     return { status: workflow, derived: false };

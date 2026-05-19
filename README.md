@@ -45,11 +45,12 @@ tied minimums, award reversal, and Set-type pinning.
 ## SOP sync health
 
 The dashboard also runs a read-only Budget → Bidding sync health check. It
-flags SOP issues like missing subcontractors before Trade Type selection,
-Biddable trades without generated Bidding tasks, Set trades with Bidding tasks,
-pending Trade Type, missing Budget Allocated, and unlinked Bidding tasks. These
-show inline in the dashboard and in `/api/budget/refresh` totals, but the app
-does not create or repair ClickUp tasks; `Updated Budget` remains the only write.
+flags true SOP contradictions like active Biddable trades with missing generated
+Bidding tasks, Set trades with Bidding tasks, active bidding without Budget
+Allocated, and unlinked Bidding tasks. Blank or Pending Trade Type is tracked
+separately as setup work, not as broken sync. These show inline in the dashboard
+and in `/api/budget/refresh` totals, but the app does not create or repair
+ClickUp tasks; `Updated Budget` remains the only write.
 
 ## Local development
 

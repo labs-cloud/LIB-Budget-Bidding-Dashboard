@@ -85,7 +85,14 @@ export function analyzeBudgetTaskSync(
     budgetTask.tradeType === 'Biddable' ? budgetTask.subcontractors.length : 0;
   const actualBiddingCount = bidsForTrade.length;
 
-  if (budgetTask.budgetAllocated == null) {
+  const budgetStatus = budgetTask.budgetStatus.trim().toLowerCase();
+  const biddingHasStarted =
+    budgetTask.tradeType === 'Biddable' &&
+    (budgetStatus === 'open for bidding' ||
+      budgetStatus === 'bid list confirmed' ||
+      actualBiddingCount > 0);
+
+  if (biddingHasStarted && budgetTask.budgetAllocated == null) {
     addIssue(
       issues,
       'missing_budget_allocated',
@@ -95,38 +102,22 @@ export function analyzeBudgetTaskSync(
     );
   }
 
-  if (budgetTask.tradeType == null || budgetTask.tradeType === 'Pending') {
-    addIssue(
-      issues,
-      'trade_type_pending',
-      'warning',
-      'trade_type',
-      'Trade Type is not finalized, so the SOP automation path cannot be confirmed.'
-    );
-  }
+  // Pending/blank Trade Type is setup work, not a broken sync. The dashboard
+  // tracks it separately as "Trades pending" instead of inflating sync issues.
 
   if (budgetTask.tradeType === 'Biddable') {
-    const status = budgetTask.budgetStatus.trim().toLowerCase();
     const activeBudgetStatuses = new Set(['open for bidding', 'bid list confirmed']);
-    if (!activeBudgetStatuses.has(status)) {
+    if (actualBiddingCount > 0 && !activeBudgetStatuses.has(budgetStatus)) {
       addIssue(
         issues,
         'biddable_budget_status_mismatch',
         'warning',
         'budget_status',
-        'Biddable trade is not in Open for Bidding or Bid List Confirmed status.'
+        'Bidding tasks exist, but the Budget trade is not Open for Bidding or Bid List Confirmed.'
       );
     }
 
-    if (budgetTask.subcontractors.length === 0) {
-      addIssue(
-        issues,
-        'missing_subcontractors',
-        'warning',
-        'subcontractors',
-        'Biddable trade has no selected subcontractors; SOP says fill this before choosing Trade Type.'
-      );
-    } else {
+    if (biddingHasStarted && budgetTask.subcontractors.length > 0) {
       const actualNames = new Set(bidsForTrade.map((bid) => nameKey(bid.subcontractor)));
       const missingSubs = budgetTask.subcontractors.filter((sub) => !actualNames.has(nameKey(sub)));
       if (missingSubs.length > 0) {

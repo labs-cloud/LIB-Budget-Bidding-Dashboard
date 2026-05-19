@@ -374,15 +374,14 @@ export function buildUnifiedPortfolio(input: {
       }
     }
   }
-  // Trade Type pending — count only the literal "Pending" dropdown value.
-  // null / undefined means "Sol hasn't classified yet, but the value isn't
-  // explicitly Pending"; we want the explicit-pending signal here. ClickUp's
-  // "2. Trade Type" field is one of: Biddable | Set | N/A | Pending.
+  // Trade Type pending — setup work, not a broken sync. Count both blank and
+  // explicit Pending values so the dashboard shows how much Budget setup is
+  // still waiting before Bidding automation should be expected.
   let tradeTypePending = 0;
   const pendingProjects = new Set<string>();
   for (const s of snapshots) {
     for (const bt of s.budgetTasks) {
-      if (bt.tradeType !== 'Pending') continue;
+      if (bt.tradeType != null && bt.tradeType !== 'Pending') continue;
       tradeTypePending += 1;
       pendingProjects.add(s.folderId);
     }
@@ -875,7 +874,7 @@ function projectMetaFor(snapshot: ProjectSnapshot): ProjectMeta {
   const projectId = mock?.shortLabel ? mock.shortLabel.toUpperCase() : null;
   return {
     address: mock?.address ?? null,
-    coord: { initials: 'SK', name: 'Sol Klein' },
+    coord: { initials: 'BB', name: 'Bidding Team' },
     projectId,
     phase,
   };

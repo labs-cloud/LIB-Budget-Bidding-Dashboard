@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { normalizeBiddingStatus, BIDDING_STATUSES } from '../types';
+import { shapeBiddingTask } from '../client';
+import type { CUTask } from '../types';
 
 describe('normalizeBiddingStatus', () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -47,5 +49,47 @@ describe('normalizeBiddingStatus', () => {
     expect(normalizeBiddingStatus(undefined)).toBeNull();
     expect(normalizeBiddingStatus('')).toBeNull();
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('shapeBiddingTask', () => {
+  it('prefers the SOP Bidding Status custom field over derived amount status', () => {
+    const task: CUTask = {
+      id: 'bid-1',
+      name: 'Acme Mechanical',
+      status: { status: 'not started' },
+      parent: null,
+      url: 'https://app.clickup.com/t/bid-1',
+      list: { id: 'bidding-list' },
+      custom_fields: [
+        {
+          id: 'status-field',
+          name: 'Bidding Status',
+          type: 'drop_down',
+          value: 'lp',
+          type_config: {
+            options: [{ id: 'lp', name: 'Leveled - Pending Review' }],
+          },
+        },
+        {
+          id: 'trade-field',
+          name: 'Trade',
+          type: 'drop_down',
+          value: 'hvac',
+          type_config: { options: [{ id: 'hvac', name: 'HVAC' }] },
+        },
+        {
+          id: 'amount-field',
+          name: 'Bid/Contracted Amount',
+          type: 'currency',
+          value: 100,
+        },
+      ],
+    };
+
+    const shaped = shapeBiddingTask(task, 'Project', 'folder-1', new Map());
+
+    expect(shaped.status).toBe('Leveled - Pending Review');
+    expect(shaped.statusDerived).toBe(false);
   });
 });

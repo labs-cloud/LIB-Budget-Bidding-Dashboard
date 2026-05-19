@@ -123,7 +123,14 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
         {!inProject ? (
           <div className="filter-row">
             <input type="search" placeholder="Search projects, trades, subs…" />
-            <select defaultValue=""><option value="">All coordinators</option><option>Sol Klein</option><option>Malky Kahan</option><option>Faigy Fellman</option></select>
+            <select defaultValue="">
+              <option value="">All team members</option>
+              <option>Raizy Hollander</option>
+              <option>Malky Teitelbaum</option>
+              <option>Luis Núñez</option>
+              <option>Shimon Katz</option>
+              <option>Shlome Friedman</option>
+            </select>
             <select defaultValue=""><option value="">All phases</option><option>Pre-construction</option><option>Bidding</option><option>Construction</option></select>
             <select defaultValue=""><option value="">All cost types</option><option>Hard cost</option><option>Soft cost</option></select>
             <div className="spacer" />
