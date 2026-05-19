@@ -214,7 +214,7 @@ function PortfolioShell({
         <div className="kpi info"><div className="l">Bids in flight</div><div className="v">{k.inFlight}</div><div className="s">{k.inFlightDelta}</div></div>
         <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">{k.awaitingFollowUp}</div><div className="s">{k.awaitingStale} stale &gt;7d</div></div>
         <div className="kpi good"><div className="l">Ready to award</div><div className="v">{k.readyToAward}</div><div className="s">{k.readyDelta}</div></div>
-        <div className="kpi neutral"><div className="l">Trade Type pending</div><div className="v">{k.tradeTypePending}</div><div className="s">across {k.tradeTypePendingProjects} projects</div></div>
+        <div className="kpi neutral"><div className="l">Trades pending</div><div className="v">{k.tradeTypePending}</div><div className="s">across {k.tradeTypePendingProjects} projects</div></div>
       </div>
 
       {view === 'pf-matrix'
