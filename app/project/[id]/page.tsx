@@ -7,16 +7,18 @@ export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: { id: string };
-  searchParams?: { trade?: string; embed?: string };
+  searchParams?: { trade?: string; embed?: string; view?: string };
 }
 
 export default async function ProjectPage({ params, searchParams }: PageProps) {
+  const view = searchParams?.view === 'bidding' ? 'bidding' : 'budget';
   const portfolio = await loadPortfolio();
   const data = buildUnifiedPortfolio({
     snapshots: portfolio.snapshots,
     source: portfolio.source,
     refreshedAt: portfolio.refreshedAt,
     warnings: portfolio.warnings,
+    view,
   });
 
   const project = data.projects.find((p) => p.folderId === params.id);

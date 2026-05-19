@@ -12,15 +12,17 @@ interface PageProps {
 
 export default async function Page({ searchParams }: PageProps) {
   const embed = searchParams?.embed === '1';
+  // ?view= selects the top-level dashboard: Budget (default) or Bidding.
+  const view = searchParams?.view === 'bidding' ? 'bidding' : 'budget';
   const portfolio = await loadPortfolio();
   const data = buildUnifiedPortfolio({
     snapshots: portfolio.snapshots,
     source: portfolio.source,
     refreshedAt: portfolio.refreshedAt,
     warnings: portfolio.warnings,
+    view,
   });
   const initialProjectId = searchParams?.project ?? null;
-  const initialView = searchParams?.view ?? null;
 
   return (
     <>
@@ -30,7 +32,6 @@ export default async function Page({ searchParams }: PageProps) {
         embed={embed}
         data={data}
         initialProjectId={initialProjectId}
-        initialView={initialView}
       />
     </>
   );

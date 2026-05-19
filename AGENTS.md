@@ -195,6 +195,36 @@ filter named "All phases" was removed in favour of "All bidding statuses".
   reaches `Awarded`. The dashboard surfaces this as a green-ringed dot in
   the trade row label.
 
+### Two top-level views — Budget & Bidding
+
+The dashboard splits into two semantically distinct views, toggled by the
+`Budget` / `Bidding` control in the header and persisted in URL state
+(`?view=budget` — default — or `?view=bidding`).
+
+- **Budget Dashboard** — the financial backbone. Shows **all** trades on a
+  project regardless of Trade Type. Focus: Estimated · Finalized lowest ·
+  New Budget per trade, cost-type rollup, variance. The operational KPIs
+  (`Pending trade-type assignments`, `Sync issues`) and the cost-type
+  rollup panel are Budget-view only.
+- **Bidding Dashboard** — the active RFP pipeline. Shows **only** trades
+  where `tradeType === 'Biddable'`. Set, N/A and Pending trades are
+  completely absent — not dimmed, not chipped, gone. Focus: subs, bid
+  amounts, bidding status, leveling, awards. The per-trade matrix swaps to
+  a bidding column set (`Bidding Status · Bid Amount · RFP Sent · Days
+  since update`). A project with zero Biddable trades renders an empty
+  state pointing back to the Budget view.
+
+This mirrors the SOP (Part 6 Step 2): Set trades route to Finance and skip
+bidding; N/A trades are line items (DOT Meeting, GC Fee) that never enter
+the workflow.
+
+**The view boundary is enforced in `buildUnifiedPortfolio`, not at render.**
+When `view === 'bidding'` every `ProjectSnapshot` is narrowed to its
+Biddable trades (`biddableOnly()`) before any aggregation runs — so the
+matrix, KPIs, panels, gantt and per-project pages all consume the correct
+subset automatically, and KPI tile captions adapt (`56 trades` vs
+`24 biddable trades`).
+
 ### Click-through navigation
 - Matrix column header → `/project/[folderId]` (full page nav, deep-linkable)
 - Matrix status pill → `/project/[folderId]?trade=<name>#trade-row-<slug>`
