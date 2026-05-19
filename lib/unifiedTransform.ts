@@ -206,7 +206,9 @@ function shortTag(trade: string): string {
     'Kitchens': 'KIT',
     'Appliances': 'APP',
   };
-  return map[trade] ?? trade.split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join('').slice(0, 4) || trade.slice(0, 3).toUpperCase();
+  if (map[trade]) return map[trade];
+  const initials = trade.split(/\s+/).map((w) => w[0]?.toUpperCase() ?? '').join('').slice(0, 4);
+  return initials || trade.slice(0, 3).toUpperCase();
 }
 
 function fmtMonthDay(dateMs: number | null): string {
