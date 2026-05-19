@@ -2,27 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import '@/styles/unified.css';
-import {
-  BRADY_IN_FLIGHT,
-  BRADY_TIMELINE,
-  GANTT_AXIS_TICKS,
-  GANTT_GROUPS,
-  GANTT_TODAY_PCT,
-  MATRIX,
-  MG_TODAY_PCT,
-  PROJECTS,
-  PT_TRADES,
-  STALE_BIDS,
-  STATUSES,
-  STATUS_COLORS,
-  STATUS_PILL_FOR_TIMELINE,
-  TRADES,
-  dayPct,
-  fmtShort,
-  type PtTrade,
-  type PtSub,
-  type StatusCode,
-} from '@/lib/unifiedDemoData';
+import type {
+  GanttRow,
+  PtSub,
+  PtTrade,
+  StatusCode,
+  UnifiedPortfolio,
+  UnifiedProject,
+} from '@/lib/unifiedTransform';
 
 type PortfolioView = 'pf-matrix' | 'pf-gantt';
 type ProjectView = 'pj-timeline' | 'pj-matrix';
@@ -35,33 +22,64 @@ function isProjectView(v: View): v is ProjectView {
   return (PROJECT_VIEWS as readonly View[]).includes(v);
 }
 
-export function UnifiedDashboard({ embed = false }: { embed?: boolean }) {
-  const [view, setView] = useState<View>('pf-matrix');
+const STATUS_NAMES: Record<StatusCode, string> = {
+  NS: 'Not Started', RS: 'RFP Sent', FU: 'Followed Up', BR: 'Bid Received',
+  LV: 'Leveling', LP: 'Leveled - Pending Review', NR: 'Needs Rebid',
+  ND: 'No Bid / Declined', AW: 'Awarded',
+};
+const STATUS_COLORS: Record<StatusCode, string> = {
+  NS: 'rgba(161,128,114,0.7)', RS: '#0091ff', FU: '#ab4aba', BR: '#12a594',
+  LV: '#186221', LP: '#aacdab', NR: '#ffc53d', ND: '#e5484d', AW: '#30a46c',
+};
+
+interface Props {
+  data: UnifiedPortfolio;
+  embed?: boolean;
+  initialProjectId?: string | null;
+  initialView?: string | null;
+}
+
+export function UnifiedDashboard({ data, embed = false, initialProjectId = null, initialView = null }: Props) {
+  const [view, setView] = useState<View>(() => {
+    if (initialView && [...PORTFOLIO_VIEWS, ...PROJECT_VIEWS].includes(initialView as View)) return initialView as View;
+    return initialProjectId ? 'pj-timeline' : 'pf-matrix';
+  });
+  const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  // Sync theme from <html data-theme> + persist.
   useEffect(() => {
-    const stored = (typeof window !== 'undefined' && localStorage.getItem('bb-theme')) as
-      | 'light' | 'dark' | null;
+    const stored = (typeof window !== 'undefined' && localStorage.getItem('bb-theme')) as 'light' | 'dark' | null;
     const initial = stored ?? 'light';
     setTheme(initial);
     document.documentElement.setAttribute('data-theme', initial);
   }, []);
 
-  // Read initial view from URL hash.
+  // Hydrate view + project from the URL hash on first mount.
   useEffect(() => {
     const h = (typeof window !== 'undefined' ? window.location.hash : '').replace('#', '');
-    if (PORTFOLIO_VIEWS.includes(h as PortfolioView) || PROJECT_VIEWS.includes(h as ProjectView)) {
-      setView(h as View);
+    if (!h) return;
+    const [viewPart, projPart] = h.split('/');
+    if (PORTFOLIO_VIEWS.includes(viewPart as PortfolioView) || PROJECT_VIEWS.includes(viewPart as ProjectView)) {
+      setView(viewPart as View);
     }
+    if (projPart) setProjectId(decodeURIComponent(projPart));
   }, []);
 
-  // Push hash on view change.
+  // Push hash on state change so deep links survive.
   useEffect(() => {
-    try { window.history.replaceState(null, '', '#' + view); } catch { /* ignore */ }
-  }, [view]);
+    try {
+      const hash = isProjectView(view) && projectId
+        ? `#${view}/${encodeURIComponent(projectId)}`
+        : `#${view}`;
+      window.history.replaceState(null, '', hash);
+    } catch { /* ignore */ }
+  }, [view, projectId]);
 
   const inProject = isProjectView(view);
+  const project = useMemo<UnifiedProject | null>(() => {
+    if (!projectId) return null;
+    return data.projects.find((p) => p.folderId === projectId) ?? null;
+  }, [data.projects, projectId]);
 
   function toggleTheme() {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -70,31 +88,48 @@ export function UnifiedDashboard({ embed = false }: { embed?: boolean }) {
     try { localStorage.setItem('bb-theme', next); } catch { /* ignore */ }
   }
 
+  function openProject(folderId: string, target: ProjectView = 'pj-timeline') {
+    setProjectId(folderId);
+    setView(target);
+  }
+
+  function backToPortfolio(target: PortfolioView = 'pf-matrix') {
+    setProjectId(null);
+    setView(target);
+  }
+
   return (
     <div className={`unified-app${embed ? ' embed' : ''}`}>
       <div className="frame">
-        <Hero inProject={inProject} theme={theme} onToggleTheme={toggleTheme} />
+        <Hero
+          inProject={inProject}
+          project={project}
+          data={data}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
+
+        {data.warnings.length > 0 && !inProject ? (
+          <div
+            role="alert"
+            style={{
+              background: 'var(--warn-bg)', color: 'var(--warn-fg)',
+              border: '0.5px solid rgba(0,0,0,0.08)',
+              borderRadius: 'var(--border-radius-md)',
+              padding: '8px 12px', fontSize: 12,
+              marginBottom: 12, fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {data.warnings.map((w, i) => (<div key={i}>{w}</div>))}
+          </div>
+        ) : null}
 
         {!inProject ? (
           <div className="filter-row">
             <input type="search" placeholder="Search projects, trades, subs…" />
-            <select defaultValue="">
-              <option value="">All coordinators</option>
-              <option>Sol Klein</option>
-              <option>Malky Kahan</option>
-              <option>Faigy Fellman</option>
-            </select>
-            <select defaultValue="">
-              <option value="">All phases</option>
-              <option>Pre-construction</option>
-              <option>Bidding</option>
-              <option>Construction</option>
-            </select>
-            <select defaultValue="">
-              <option value="">All cost types</option>
-              <option>Hard cost</option>
-              <option>Soft cost</option>
-            </select>
+            <select defaultValue=""><option value="">All coordinators</option><option>Sol Klein</option><option>Malky Kahan</option><option>Faigy Fellman</option></select>
+            <select defaultValue=""><option value="">All phases</option><option>Pre-construction</option><option>Bidding</option><option>Construction</option></select>
+            <select defaultValue=""><option value="">All cost types</option><option>Hard cost</option><option>Soft cost</option></select>
             <div className="spacer" />
             <div className="view-tabs">
               <button type="button" className={view === 'pf-matrix' ? 'active' : ''} onClick={() => setView('pf-matrix')}>
@@ -108,12 +143,19 @@ export function UnifiedDashboard({ embed = false }: { embed?: boolean }) {
         ) : null}
 
         {!inProject ? (
-          <PortfolioShell view={view as PortfolioView} onOpenBrady={() => setView('pj-timeline')} />
+          <PortfolioShell data={data} view={view as PortfolioView} onOpenProject={openProject} />
+        ) : project ? (
+          <ProjectShell project={project} view={view as ProjectView} onChange={(v) => setView(v)} onBack={() => backToPortfolio()} />
         ) : (
-          <ProjectShell view={view as ProjectView} onChange={setView} onBack={() => setView('pf-matrix')} />
+          <p style={{ color: 'var(--color-text-secondary)' }}>Project not found.</p>
         )}
 
-        <div className="bb-footer">Source: ClickUp B&amp;B SOP</div>
+        <div className="bb-footer">
+          Source:{' '}
+          <a href="https://leadit.clickup.com/9017603275/v/dc/8cqvd6b-305837">ClickUp B&amp;B SOP</a>
+          {' · '}
+          {data.source === 'live' ? `live · refreshed ${data.refreshedAgo}` : 'mock fixtures (set CLICKUP_API_TOKEN)'}
+        </div>
       </div>
     </div>
   );
@@ -124,19 +166,24 @@ export function UnifiedDashboard({ embed = false }: { embed?: boolean }) {
 // ----------------------------------------------------------------------------
 
 function Hero({
-  inProject,
-  theme,
-  onToggleTheme,
-}: { inProject: boolean; theme: 'light' | 'dark'; onToggleTheme: () => void }) {
-  const title = inProject ? '800 Brady Ave' : 'Budget Dashboard';
-  const meta = inProject
-    ? <><b>14 trades</b> · 8 awarded · 4 bidding · 2 set · Updated budget $13.86M</>
-    : <><b>87 bids in flight</b> across 10 active projects · live from ClickUp · Stale · 42m ago</>;
+  inProject, project, data, theme, onToggleTheme,
+}: {
+  inProject: boolean;
+  project: UnifiedProject | null;
+  data: UnifiedPortfolio;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
+}) {
+  const title = inProject && project ? project.folderName : 'Budget Dashboard';
+  const meta = inProject && project
+    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding · {project.summary.set} set · Updated budget {project.summary.updatedBudget}</>
+    : <><b>{data.hero.inFlight} bids in flight</b> across {data.hero.activeProjects} active projects · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
 
   return (
     <div className="lib-hero">
       <div className="logo-box">
-        <LibLogo />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/lib_logo.png" alt="Lead It Builders" className="lib-logo-svg" style={{ objectFit: 'contain' }} />
       </div>
       <div>
         <h1>{title}</h1>
@@ -146,51 +193,51 @@ function Hero({
         <button className="dash-pill" type="button">
           <Icon name="layout-dashboard" /> Budget dashboard
         </button>
-        <button className="iconbtn" type="button" title="Refresh"><Icon name="refresh" /></button>
+        <button className="iconbtn" type="button" title="Refresh" onClick={() => location.reload()}><Icon name="refresh" /></button>
         <button className="iconbtn" type="button" onClick={onToggleTheme} aria-label="Toggle theme">
           {theme === 'dark' ? <Icon name="sun" /> : <Icon name="moon" />}
         </button>
-        <span className="status-pill">Stale</span>
+        <span className="status-pill">{data.source === 'live' ? 'Live' : 'Mock'}</span>
       </div>
     </div>
   );
 }
 
 // ----------------------------------------------------------------------------
-// Portfolio shell — KPI strip + Matrix or Gantt view
+// Portfolio shell
 // ----------------------------------------------------------------------------
 
-function PortfolioShell({ view, onOpenBrady }: { view: PortfolioView; onOpenBrady: () => void }) {
+function PortfolioShell({
+  data, view, onOpenProject,
+}: { data: UnifiedPortfolio; view: PortfolioView; onOpenProject: (folderId: string) => void }) {
+  const k = data.kpis;
   return (
     <>
       <div className="kpis">
-        <div className="kpi info"><div className="l">Bids in flight</div><div className="v">87</div><div className="s">+6 w/w</div></div>
-        <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">12</div><div className="s">3 stale</div></div>
-        <div className="kpi good"><div className="l">Ready to award</div><div className="v">8</div><div className="s">+2 this wk</div></div>
-        <div className="kpi neutral"><div className="l">Trade Type pending</div><div className="v">23</div><div className="s">across 6 projects</div></div>
+        <div className="kpi info"><div className="l">Bids in flight</div><div className="v">{k.inFlight}</div><div className="s">{k.inFlightDelta}</div></div>
+        <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">{k.awaitingFollowUp}</div><div className="s">{k.awaitingStale} stale &gt;7d</div></div>
+        <div className="kpi good"><div className="l">Ready to award</div><div className="v">{k.readyToAward}</div><div className="s">{k.readyDelta}</div></div>
+        <div className="kpi neutral"><div className="l">Trade Type pending</div><div className="v">{k.tradeTypePending}</div><div className="s">across {k.tradeTypePendingProjects} projects</div></div>
       </div>
 
-      {view === 'pf-matrix' ? <PortfolioMatrix onOpenBrady={onOpenBrady} /> : <PortfolioGantt />}
+      {view === 'pf-matrix'
+        ? <PortfolioMatrix data={data} onOpenProject={onOpenProject} />
+        : <PortfolioGantt data={data} />}
     </>
   );
 }
 
-function PortfolioMatrix({ onOpenBrady }: { onOpenBrady: () => void }) {
-  const distribution = useMemo(() => {
-    const counts: Partial<Record<StatusCode, number>> = {};
-    for (const row of MATRIX) for (const c of row) counts[c] = (counts[c] ?? 0) + 1;
-    return { counts, total: MATRIX.length * (MATRIX[0]?.length ?? 0) };
-  }, []);
-  const ORDER: StatusCode[] = ['AW','LP','LV','BR','FU','RS','NS','NR','ND'];
-
+function PortfolioMatrix({
+  data, onOpenProject,
+}: { data: UnifiedPortfolio; onOpenProject: (folderId: string) => void }) {
+  const stale = data.stale;
   return (
     <div className="body-wrap">
       <div className="panel-card">
         <div className="h">
           <Icon name="grid-dots" /> Portfolio bidding matrix
           <span className="meta">
-            14 trades × 10 projects · click{' '}
-            <a onClick={onOpenBrady} href="#pj-timeline">Brady</a> column to drill in
+            {data.matrix.rows.length} trades × {data.matrix.projects.length} projects · click a project header to drill in
           </span>
         </div>
         <div className="matrix-scroll">
@@ -198,27 +245,32 @@ function PortfolioMatrix({ onOpenBrady }: { onOpenBrady: () => void }) {
             <thead>
               <tr>
                 <th className="col-trade">Trade</th>
-                {PROJECTS.map((p) => (
+                {data.matrix.projects.map((p) => (
                   <th
-                    key={p}
-                    className={`col-proj${p === 'Brady' ? ' is-brady' : ''}`}
-                    onClick={p === 'Brady' ? onOpenBrady : undefined}
+                    key={p.folderId}
+                    className="col-proj"
+                    onClick={() => onOpenProject(p.folderId)}
+                    title={p.full}
                   >
-                    {p}
+                    {p.short}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {TRADES.map((t, ti) => (
-                <tr key={t.name}>
-                  <td className="trade-name" title={t.name}>
-                    <span className={`ctag ${t.cost}`}>{t.cost === 'hard' ? 'H' : 'S'}</span>
-                    {t.name}
+              {data.matrix.rows.map((r) => (
+                <tr key={r.trade}>
+                  <td className="trade-name" title={r.trade}>
+                    <span className={`ctag ${r.cost}`}>{r.cost === 'hard' ? 'H' : 'S'}</span>
+                    {r.trade}
                   </td>
-                  {MATRIX[ti].map((code, ci) => (
+                  {r.cells.map((cell, ci) => (
                     <td key={ci}>
-                      <span className={`bb-cell-pill ${code.toLowerCase()}`} title={STATUSES[code].name}>{code}</span>
+                      {cell.code ? (
+                        <span className={`bb-cell-pill ${cell.code.toLowerCase()}`} title={cell.name ?? ''}>{cell.code}</span>
+                      ) : (
+                        <span style={{ color: 'var(--color-text-tertiary)', fontSize: 11 }}>—</span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -227,10 +279,10 @@ function PortfolioMatrix({ onOpenBrady }: { onOpenBrady: () => void }) {
           </table>
         </div>
         <div className="legend">
-          {(Object.keys(STATUSES) as StatusCode[]).map((k) => (
+          {(Object.keys(STATUS_NAMES) as StatusCode[]).map((k) => (
             <span key={k} className="sw">
               <span className={`bb-cell-pill ${k.toLowerCase()}`}>{k}</span>
-              {STATUSES[k].name}
+              {STATUS_NAMES[k]}
             </span>
           ))}
         </div>
@@ -239,13 +291,17 @@ function PortfolioMatrix({ onOpenBrady }: { onOpenBrady: () => void }) {
       <div className="panel-card">
         <div className="h">
           <Icon name="clock-exclamation" /> Awaiting follow-up
-          <span className="meta">5 stale · sorted by days since RFP</span>
+          <span className="meta">{stale.length} stale · sorted by days since last update</span>
         </div>
         <div className="perm-list">
-          {STALE_BIDS.map((b) => {
+          {stale.length === 0 ? (
+            <div style={{ color: 'var(--color-text-tertiary)', fontSize: 12, padding: 10 }}>
+              No bids stale &gt;7 days.
+            </div>
+          ) : stale.map((b) => {
             const crit = b.days >= 12;
             return (
-              <a key={b.sub} href="#" className={`row${crit ? ' critical' : ''}`}>
+              <a key={`${b.sub}-${b.project}-${b.trade}`} href="#" className={`row${crit ? ' critical' : ''}`}>
                 <div className="when">
                   <div className="d">{b.days}</div>
                   <div className="mo">days</div>
@@ -253,7 +309,7 @@ function PortfolioMatrix({ onOpenBrady }: { onOpenBrady: () => void }) {
                 <div className="info">
                   <div className="trade">{b.trade}</div>
                   <div className="name">{b.sub}</div>
-                  <div className="proj">{b.project} · RFP {b.rfp}</div>
+                  <div className="proj">{b.project} · last update {b.rfp}</div>
                 </div>
                 <span className="countdown">{crit ? 'overdue' : 'stale'}</span>
               </a>
@@ -263,85 +319,59 @@ function PortfolioMatrix({ onOpenBrady }: { onOpenBrady: () => void }) {
         <div style={{ height: 18 }} />
         <div className="h" style={{ marginTop: 4 }}>
           <Icon name="chart-pie" /> Status distribution
-          <span className="meta">{distribution.total} cells</span>
+          <span className="meta">{data.matrix.totalCells} cells</span>
         </div>
         <div className="stat-bar">
-          {ORDER.map((k) => {
-            const n = distribution.counts[k] ?? 0;
-            if (!n) return null;
-            return (
-              <div
-                key={k}
-                className="seg"
-                style={{ width: `${(n / distribution.total * 100).toFixed(2)}%`, background: STATUS_COLORS[k] }}
-                title={`${STATUSES[k].name}: ${n}`}
-              />
-            );
-          })}
+          {data.matrix.distribution.map((d) => (
+            <div
+              key={d.code}
+              className="seg"
+              style={{ width: `${(d.n / Math.max(1, data.matrix.totalCells) * 100).toFixed(2)}%`, background: STATUS_COLORS[d.code] }}
+              title={`${STATUS_NAMES[d.code]}: ${d.n}`}
+            />
+          ))}
         </div>
         <div className="stat-legend">
-          {ORDER.map((k) => {
-            const n = distribution.counts[k] ?? 0;
-            if (!n) return null;
-            return (
-              <div key={k} className="row">
-                <span className="dot" style={{ background: STATUS_COLORS[k] }} />
-                {STATUSES[k].name}
-                <span className="n">{n}</span>
-              </div>
-            );
-          })}
+          {data.matrix.distribution.map((d) => (
+            <div key={d.code} className="row">
+              <span className="dot" style={{ background: STATUS_COLORS[d.code] }} />
+              {STATUS_NAMES[d.code]}
+              <span className="n">{d.n}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function PortfolioGantt() {
+function PortfolioGantt({ data }: { data: UnifiedPortfolio }) {
+  const todayPct = data.ganttAxis.todayPct;
   return (
     <div className="gantt-card">
       <div className="h">
         <Icon name="timeline" /> Bid lifecycle timeline
-        <span className="meta">RFP sent → awarded · 14 trades · grouped by Cost Type</span>
+        <span className="meta">Aggregated across {data.hero.activeProjects} projects · grouped by Cost Type</span>
       </div>
       <div className="gantt">
         <div />
         <div className="ax-track">
-          {GANTT_AXIS_TICKS.map((t) => (
-            <span key={t.label} className={`ax-tick${t.today ? ' today' : ''}`} style={{ left: `${t.left}%` }}>
+          {data.ganttAxis.ticks.map((t, i) => (
+            <span key={i} className={`ax-tick${t.today ? ' today' : ''}`} style={{ left: `${t.left}%` }}>
               {t.label}
             </span>
           ))}
         </div>
         <div />
 
-        {GANTT_GROUPS.map((g) => (
+        {data.gantt.map((g) => (
           <FragmentBlock key={g.label}>
             <div className="group-divider">
               <span className={`tag ${g.cost}`}>{g.label}</span>
               <span className="line" />
               <span className="count">{g.count}</span>
             </div>
-            {g.rows.map((r) => (
-              <FragmentBlock key={r.name}>
-                <div className="tr-label">
-                  <span className="tag">{r.tagShort}</span>
-                  <span className="name">{r.name}</span>
-                </div>
-                <div className="tr-track">
-                  <div className="today-line" style={{ left: `${GANTT_TODAY_PCT}%` }} />
-                  <div className={`tr-bar ${r.barKind}`} style={{ left: `${r.left}%`, width: `${r.width}%` }}>
-                    {Array.from({ length: r.pips }).map((_, i) => <span key={i} className="pip" />)}
-                    {r.span}
-                    <span className="marker-end" />
-                  </div>
-                </div>
-                <div className="tr-chip">
-                  <span className={`pill ${r.pillKind}`}>{r.pillText}</span>
-                  <span className="sub">{r.sub}</span>
-                </div>
-              </FragmentBlock>
-            ))}
+            {g.rows.map((r) => <GanttRowEl key={r.name} row={r} todayPct={todayPct} />)}
           </FragmentBlock>
         ))}
       </div>
@@ -356,13 +386,33 @@ function PortfolioGantt() {
   );
 }
 
+function GanttRowEl({ row, todayPct }: { row: GanttRow; todayPct: number }) {
+  return (
+    <FragmentBlock>
+      <div className="tr-label"><span className="tag">{row.tagShort}</span><span className="name">{row.name}</span></div>
+      <div className="tr-track">
+        <div className="today-line" style={{ left: `${todayPct}%` }} />
+        <div className={`tr-bar ${row.barKind}`} style={{ left: `${row.left}%`, width: `${row.width}%` }}>
+          {Array.from({ length: row.pips }).map((_, i) => <span key={i} className="pip" />)}
+          {row.span}
+          <span className="marker-end" />
+        </div>
+      </div>
+      <div className="tr-chip">
+        <span className={`pill ${row.pillKind}`}>{row.pillText}</span>
+        <span className="sub">{row.sub}</span>
+      </div>
+    </FragmentBlock>
+  );
+}
+
 // ----------------------------------------------------------------------------
-// Project shell — Brady drill-in (Timeline + Per-trade matrix)
+// Project shell
 // ----------------------------------------------------------------------------
 
 function ProjectShell({
-  view, onChange, onBack,
-}: { view: ProjectView; onChange: (v: View) => void; onBack: () => void }) {
+  project, view, onChange, onBack,
+}: { project: UnifiedProject; view: ProjectView; onChange: (v: View) => void; onBack: () => void }) {
   return (
     <>
       <div className="crumb">
@@ -370,17 +420,17 @@ function ProjectShell({
         <Icon name="chevron-right" />
         <a onClick={onBack} href="#pf-matrix">Portfolio</a>
         <Icon name="chevron-right" />
-        <span>800 Brady Ave</span>
+        <span>{project.folderName}</span>
       </div>
 
       <header className="header-grid">
         <div>
-          <h1 className="h-title">800 Brady Ave</h1>
+          <h1 className="h-title">{project.folderName}</h1>
           <div className="h-meta">
-            <span className="chip"><span className="avatar avatar-sol">SK</span>Sol Klein</span>
-            <span className="phase"><Icon name="gavel" size={13} />Bidding</span>
-            <span><Icon name="map-pin" size={13} /> Bronx, NY</span>
-            <span><Icon name="id" size={13} /> 800-BRDY-2025</span>
+            <span className="chip"><span className="avatar avatar-sol">{project.coord.initials}</span>{project.coord.name}</span>
+            <span className="phase"><Icon name="gavel" size={13} />{project.phase}</span>
+            {project.address ? <span><Icon name="map-pin" size={13} /> {project.address}</span> : null}
+            {project.projectId ? <span><Icon name="id" size={13} /> {project.projectId}</span> : null}
           </div>
         </div>
         <div className="h-actions">
@@ -390,11 +440,11 @@ function ProjectShell({
       </header>
 
       <div className="summary">
-        <div className="cell"><div className="l">Trades</div><div className="v">14</div></div>
-        <div className="cell good"><div className="l">Awarded</div><div className="v">8</div></div>
-        <div className="cell warn"><div className="l">In bidding</div><div className="v">4</div></div>
-        <div className="cell muted"><div className="l">Set</div><div className="v">2</div></div>
-        <div className="cell money"><div className="l">Updated budget</div><div className="v">$13.86<span className="unit">M</span></div></div>
+        <div className="cell"><div className="l">Trades</div><div className="v">{project.summary.trades}</div></div>
+        <div className="cell good"><div className="l">Awarded</div><div className="v">{project.summary.awarded}</div></div>
+        <div className="cell warn"><div className="l">In bidding</div><div className="v">{project.summary.bidding}</div></div>
+        <div className="cell muted"><div className="l">Set</div><div className="v">{project.summary.set}</div></div>
+        <div className="cell money"><div className="l">Updated budget</div><div className="v">{project.summary.updatedBudget}</div></div>
       </div>
 
       <div className="project-subtabs">
@@ -406,26 +456,27 @@ function ProjectShell({
         </button>
       </div>
 
-      {view === 'pj-timeline' ? <ProjectTimeline /> : <ProjectMatrix />}
+      {view === 'pj-timeline' ? <ProjectTimeline project={project} /> : <ProjectMatrix project={project} />}
     </>
   );
 }
 
-function ProjectTimeline() {
+function ProjectTimeline({ project }: { project: UnifiedProject }) {
   return (
     <div className="layout">
       <div className="timeline">
-        {BRADY_TIMELINE.map((g) => (
+        {project.timeline.length === 0 ? (
+          <p style={{ color: 'var(--color-text-tertiary)' }}>No bidding activity yet.</p>
+        ) : project.timeline.map((g) => (
           <FragmentBlock key={g.label}>
             <div className={`group-h ${g.group}`}>
               {g.label}<span className="count">{g.sub}</span>
             </div>
             {g.rows.map((r) => {
               const [pillCls, pillCode, pillName] = STATUS_PILL_FOR_TIMELINE[r.stat];
-              const amountLabel =
-                r.stat === 'set' ? 'Amount' : r.stat === 'lv' ? 'Lowest' : 'Bid';
+              const amountLabel = r.stat === 'set' ? 'Amount' : r.stat === 'lv' ? 'Lowest' : 'Bid';
               return (
-                <div key={r.name} className={`tl-row ${r.stat}`}>
+                <div key={`${r.name}-${r.date}`} className={`tl-row ${r.stat}`}>
                   <div className={`tl-date${r.warn ? ' warn' : ''}`}>{r.date}</div>
                   <div className={`tl-card ${r.stat}`}>
                     <div className="top">
@@ -437,9 +488,7 @@ function ProjectTimeline() {
                     </div>
                     <div className="meta">
                       <span className="sub-name">{r.sub}</span>
-                      {r.amt ? (
-                        <span><span className="label">{amountLabel}</span> <span className="amt">{r.amt}</span></span>
-                      ) : null}
+                      {r.amt ? <span><span className="label">{amountLabel}</span> <span className="amt">{r.amt}</span></span> : null}
                       <span><span className="label">Allocated</span> {r.alloc}</span>
                       {r.rfp ? <span><span className="label">RFP</span> {r.rfp}</span> : null}
                     </div>
@@ -453,9 +502,11 @@ function ProjectTimeline() {
 
       <aside className="side">
         <div className="panel">
-          <h3>Bids in flight <span className="count">{BRADY_IN_FLIGHT.length}</span></h3>
-          {BRADY_IN_FLIGHT.map((b) => (
-            <div key={b.sub} className={`bif-card${b.crit ? ' critical' : ''}`}>
+          <h3>Bids in flight <span className="count">{project.inFlight.length}</span></h3>
+          {project.inFlight.length === 0 ? (
+            <div style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>No in-flight bids.</div>
+          ) : project.inFlight.map((b) => (
+            <div key={`${b.sub}-${b.trade}`} className={`bif-card${b.crit ? ' critical' : ''}`}>
               <div className="top">
                 <div>
                   <div className="trade-tag">{b.trade}</div>
@@ -472,25 +523,30 @@ function ProjectTimeline() {
           <div className="chain-row">
             <span className="role">
               <span className="bb-pill" style={{ background: 'var(--bb-hard-bg)', color: 'var(--bb-hard)', fontSize: 10, letterSpacing: '0.05em', padding: '1px 6px' }}>HARD</span>{' '}
-              11 trades
+              {project.rollup.hardTrades} trades
             </span>
-            <span className="who">$13.32M</span>
+            <span className="who">{project.rollup.hardTotal}</span>
           </div>
           <div className="chain-row">
             <span className="role">
               <span className="bb-pill" style={{ background: 'var(--bb-soft-bg)', color: 'var(--bb-soft)', fontSize: 10, letterSpacing: '0.05em', padding: '1px 6px' }}>SOFT</span>{' '}
-              3 trades
+              {project.rollup.softTrades} trades
             </span>
-            <span className="who">$0.54M</span>
+            <span className="who">{project.rollup.softTotal}</span>
           </div>
           <div className="chain-row" style={{ borderTop: '0.5px solid var(--color-border-secondary)', paddingTop: 10, marginTop: 4 }}>
             <span className="role" style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>Updated budget</span>
-            <span className="who" style={{ color: 'var(--good-strong)', fontSize: 14 }}>$13.86M</span>
+            <span className="who" style={{ color: 'var(--good-strong)', fontSize: 14 }}>{project.rollup.updated}</span>
           </div>
-          <div className="chain-row"><span className="role">Allocated</span><span className="who">$14.18M</span></div>
+          <div className="chain-row"><span className="role">Allocated</span><span className="who">{project.rollup.allocated}</span></div>
           <div className="chain-row">
             <span className="role">Variance</span>
-            <span className="who" style={{ color: 'var(--good-fg)' }}>−$320k (2.3%)</span>
+            <span
+              className="who"
+              style={{ color: project.rollup.varianceKind === 'pos' ? 'var(--good-fg)' : project.rollup.varianceKind === 'neg' ? 'var(--danger-fg)' : 'var(--color-text-secondary)' }}
+            >
+              {project.rollup.variance}
+            </span>
           </div>
         </div>
       </aside>
@@ -498,7 +554,7 @@ function ProjectTimeline() {
   );
 }
 
-function ProjectMatrix() {
+function ProjectMatrix({ project }: { project: UnifiedProject }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   function toggle(i: number) {
@@ -514,7 +570,7 @@ function ProjectMatrix() {
     <div className="table-card">
       <div className="h">
         <Icon name="table" /> Per-trade bid matrix
-        <span className="meta">14 trades × up to 4 subs · LOW = lowest non-rejected bid · click any row to expand the stage Gantt</span>
+        <span className="meta">{project.ptTrades.length} trades · up to 4 subs · click any row to expand the stage Gantt</span>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table className="per-trade">
@@ -530,7 +586,7 @@ function ProjectMatrix() {
             </tr>
           </thead>
           <tbody>
-            {PT_TRADES.map((t, i) => (
+            {project.ptTrades.map((t, i) => (
               <FragmentBlock key={t.name}>
                 <tr className={`trade-row${expanded.has(i) ? ' expanded' : ''}`} onClick={() => toggle(i)}>
                   <td className="td-trade">
@@ -577,12 +633,10 @@ function BidCard({ bid }: { bid: PtSub | null | undefined }) {
   if (!bid) return <div className="bid-card empty">—</div>;
   const cls = 'bid-card' + (bid.isLow ? ' is-low' : '');
   return (
-    <div className={cls} title={`${bid.name} · ${STATUSES[bid.status].name}`}>
+    <div className={cls} title={`${bid.name} · ${STATUS_NAMES[bid.status]}`}>
       <div className="sub-name">{bid.name}</div>
       <div className="row2">
-        <span className={`bb-pill ${bid.status.toLowerCase()}`}>
-          <span className="code">{bid.status}</span>
-        </span>
+        <span className={`bb-pill ${bid.status.toLowerCase()}`}><span className="code">{bid.status}</span></span>
         {bid.amount == null
           ? <span className="amt dim">awaiting</span>
           : <span className="amt">{fmtShort(bid.amount)}</span>}
@@ -610,31 +664,44 @@ function DeltaCell({ updated, allocated }: { updated: number | null; allocated: 
   );
 }
 
+// Per-row mini gantt — start of bidding (oldest RFP) → today.
 function MiniGantt({ trade }: { trade: PtTrade }) {
   const subs = trade.subs.filter(Boolean) as PtSub[];
+  if (subs.length === 0) return <p style={{ color: 'var(--color-text-tertiary)', fontSize: 12 }}>No bids yet.</p>;
+
+  // Build a local axis from RFP dates of these subs. Fall back to a fixed
+  // 80-day window when nothing parses.
+  const today = Date.now();
+  const dates = subs
+    .map((s) => parseShortDate(s.rfp))
+    .filter((d): d is number => d != null);
+  const start = dates.length > 0 ? Math.min(...dates) : today - 60 * 86_400_000;
+  const end = Math.max(today, ...(dates.length > 0 ? dates : [today]));
+  const span = Math.max(1, end - start);
+  const pctOf = (ms: number | null) => ms == null ? null : Math.max(0, Math.min(100, ((ms - start) / span) * 100));
+  const todayPct = ((today - start) / span) * 100;
+
   return (
     <div className="mini-gantt">
       <div className="mg-row">
         <div />
         <div className="mg-axis">
-          <span className="tick" style={{ left: '0%' }}>Mar 1</span>
-          <span className="tick" style={{ left: '18.75%' }}>Mar 15</span>
-          <span className="tick" style={{ left: '38.75%' }}>Apr 1</span>
-          <span className="tick" style={{ left: '56.25%' }}>Apr 15</span>
-          <span className="tick" style={{ left: '76.25%' }}>May 1</span>
-          <span className="tick today" style={{ left: `${MG_TODAY_PCT.toFixed(1)}%` }}>Today</span>
+          {[0, 20, 40, 60, 80].map((p) => (
+            <span key={p} className="tick" style={{ left: `${p}%` }}>{fmtMonthDayMs(start + (p / 100) * span)}</span>
+          ))}
+          <span className="tick today" style={{ left: `${todayPct.toFixed(1)}%` }}>Today</span>
         </div>
         <div />
       </div>
       {subs.map((s) => {
-        const start = dayPct(s.rfp);
-        const end = dayPct(s.last);
-        const endP = end ?? MG_TODAY_PCT;
-        const startP = start ?? 0;
-        const span = Math.max(2, endP - startP);
+        const startMs = parseShortDate(s.rfp);
+        const startP = pctOf(startMs);
+        const endP = todayPct;
+        const startPos = startP ?? 0;
+        const width = Math.max(2, endP - startPos);
         const isAwarded = s.status === 'AW';
         const isDeclined = s.status === 'ND';
-        const isSet = !!s.rfp && s.rfp.startsWith('— set');
+        const isSet = s.rfp.startsWith('— set');
         const barClass = isAwarded ? 'awarded' : isDeclined ? 'declined' : 'in-flight';
         return (
           <div className="mg-row" key={s.name}>
@@ -643,29 +710,29 @@ function MiniGantt({ trade }: { trade: PtTrade }) {
               <span className="sub-meta">RFP {s.rfp} · last activity {s.last}</span>
             </div>
             <div className="mg-track">
-              <div className="today-line" style={{ left: `${MG_TODAY_PCT.toFixed(1)}%` }} />
+              <div className="today-line" style={{ left: `${todayPct.toFixed(1)}%` }} />
               {isSet ? (
-                <div className="mg-bar awarded" style={{ left: `${(MG_TODAY_PCT - 2).toFixed(1)}%`, width: '4%' }}>SET</div>
+                <div className="mg-bar awarded" style={{ left: `${Math.max(0, todayPct - 2).toFixed(1)}%`, width: '4%' }}>SET</div>
               ) : (
-                <div className={`mg-bar ${barClass}`} style={{ left: `${startP.toFixed(1)}%`, width: `${span.toFixed(1)}%` }}>
+                <div className={`mg-bar ${barClass}`} style={{ left: `${startPos.toFixed(1)}%`, width: `${width.toFixed(1)}%` }}>
                   {s.rfp} → {s.last}
                 </div>
               )}
-              {start != null ? (
-                <div className="mg-stage rs" style={{ left: `${startP.toFixed(1)}%` }} title={`RFP Sent · ${s.rfp}`} />
+              {startP != null ? (
+                <div className="mg-stage rs" style={{ left: `${startPos.toFixed(1)}%` }} title={`RFP Sent · ${s.rfp}`} />
               ) : null}
-              {end != null && end !== start && !isSet ? (
+              {!isSet ? (
                 <div
                   className={`mg-stage ${isAwarded ? 'aw' : isDeclined ? 'nd' : s.status.toLowerCase()}`}
                   style={{ left: `${endP.toFixed(1)}%` }}
-                  title={`${STATUSES[s.status].name} · ${s.last}`}
+                  title={`${STATUS_NAMES[s.status]} · ${s.last}`}
                 />
               ) : null}
             </div>
             <div className="chip">
               {s.amount != null
-                ? <><strong>{fmtShort(s.amount)}</strong> · {STATUSES[s.status].name}</>
-                : STATUSES[s.status].name}
+                ? <><strong>{fmtShort(s.amount)}</strong> · {STATUS_NAMES[s.status]}</>
+                : STATUS_NAMES[s.status]}
             </div>
           </div>
         );
@@ -675,28 +742,47 @@ function MiniGantt({ trade }: { trade: PtTrade }) {
 }
 
 // ----------------------------------------------------------------------------
-// Tiny helpers
+// Helpers
 // ----------------------------------------------------------------------------
 
 function FragmentBlock({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function LibLogo() {
-  // Inline mark — the design's PNG isn't shipped with the dashboard.
-  return (
-    <svg className="lib-logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-label="Lead It Builders">
-      <rect x="6" y="6" width="88" height="88" rx="14" fill="var(--lib-orange)" />
-      <text
-        x="50" y="62" textAnchor="middle"
-        fontFamily="-apple-system, BlinkMacSystemFont, 'SF Pro', Inter, sans-serif"
-        fontSize="34" fontWeight={700} fill="#fff" letterSpacing="-0.02em"
-      >LIB</text>
-    </svg>
-  );
+const STATUS_PILL_FOR_TIMELINE: Record<'aw' | 'lv' | 'rs' | 'fu' | 'br' | 'set', [string, string, string]> = {
+  aw:  ['aw', 'AW', 'Awarded'],
+  lv:  ['lv', 'LV', 'Leveling'],
+  rs:  ['rs', 'RS', 'RFP Sent'],
+  fu:  ['fu', 'FU', 'Followed Up'],
+  br:  ['br', 'BR', 'Bid Received'],
+  set: ['aw', 'AW', 'Awarded · Set'],
+};
+
+function fmtShort(n: number | null): string {
+  if (n == null) return '—';
+  if (Math.abs(n) >= 1_000_000) return '$' + (n / 1_000_000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (Math.abs(n) >= 1_000) return '$' + Math.round(n / 1000) + 'k';
+  return '$' + n;
 }
 
-// Tabler-icon as a tiny inline SVG renderer (avoids the CDN font dependency).
+const MONTH_INDEX: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+
+function parseShortDate(s: string): number | null {
+  if (!s || s === '—' || s.startsWith('— set')) return null;
+  const m = s.match(/^([A-Za-z]+)\s+(\d+)/);
+  if (!m) return null;
+  const month = MONTH_INDEX[m[1] as keyof typeof MONTH_INDEX];
+  if (month == null) return null;
+  const year = new Date().getFullYear();
+  return new Date(year, month, parseInt(m[2], 10)).getTime();
+}
+
+function fmtMonthDayMs(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Tabler-icon as inline SVG — avoids a CDN font dependency.
 function Icon({ name, size = 16 }: { name: string; size?: number }) {
   const path = ICON_PATHS[name];
   if (!path) return <span aria-hidden style={{ display: 'inline-block', width: size, height: size }} />;
