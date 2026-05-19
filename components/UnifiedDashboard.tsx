@@ -312,6 +312,14 @@ function PortfolioShell({
         </button>
       </div>
 
+      {/* Budget Outlook portfolio rollup — Estimated → Finalized → New Budget
+          summed across every project, mirroring the team's xlsx footer. */}
+      <div className="budget-tiles portfolio">
+        <div className="bt-tile"><div className="bt-v">{data.budgetOutlook.estimated}</div><div className="bt-l">Estimated</div></div>
+        <div className="bt-tile"><div className="bt-v">{data.budgetOutlook.finalized}</div><div className="bt-l">Finalized lowest</div></div>
+        <div className="bt-tile primary"><div className="bt-v">{data.budgetOutlook.newBudget}</div><div className="bt-l">New Budget</div></div>
+      </div>
+
       {view === 'pf-matrix'
         ? <PortfolioMatrix data={data} filterStatus={filterStatus} filterTradeType={filterTradeType} filterCost={filterCost} />
         : view === 'pf-gantt'
@@ -642,8 +650,14 @@ function ProjectShell({
         <div className="cell good"><div className="l">Awarded</div><div className="v">{project.summary.awarded}</div></div>
         <div className="cell warn"><div className="l">In bidding</div><div className="v">{project.summary.bidding}</div></div>
         <div className="cell muted"><div className="l">Set</div><div className="v">{project.summary.set}</div></div>
-        <div className="cell money"><div className="l">Updated budget</div><div className="v">{project.summary.updatedBudget}</div></div>
         <div className="cell warn"><div className="l">Sync issues</div><div className="v">{project.summary.syncIssues}</div></div>
+      </div>
+      {/* Budget Outlook three-number progression — mirrors the team's
+          SharePoint xlsx (Estimated → Finalized lowest → New Budget). */}
+      <div className="budget-tiles">
+        <div className="bt-tile"><div className="bt-v">{project.summary.estimatedTotal}</div><div className="bt-l">Estimated</div></div>
+        <div className="bt-tile"><div className="bt-v">{project.summary.finalizedTotal}</div><div className="bt-l">Finalized lowest</div></div>
+        <div className="bt-tile primary"><div className="bt-v">{project.summary.newBudgetTotal}</div><div className="bt-l">New Budget</div></div>
       </div>
 
       <div className="project-subtabs">
@@ -809,13 +823,17 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
         <table className="per-trade">
           <colgroup>
             <col className="c-trade" /><col className="c-sub" /><col className="c-sub" /><col className="c-sub" /><col className="c-sub" />
-            <col className="c-money" /><col className="c-money" /><col className="c-delta" /><col className="c-toggle" />
+            <col className="c-money" /><col className="c-money" /><col className="c-money" /><col className="c-delta" /><col className="c-toggle" />
           </colgroup>
           <thead>
             <tr>
               <th>Trade</th>
               <th>Sub 1</th><th>Sub 2</th><th>Sub 3</th><th>Sub 4</th>
-              <th className="r">Updated</th><th className="r">Allocated</th><th className="r">∆</th><th className="c" />
+              <th className="r">Estimated</th>
+              <th className="r">Finalized Lowest</th>
+              <th className="r">New Budget</th>
+              <th className="r">Δ vs Estimate</th>
+              <th className="c" />
             </tr>
           </thead>
           <tbody>
@@ -867,9 +885,10 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                   <td className="bid-cell"><BidCard bid={t.subs[1]} /></td>
                   <td className="bid-cell"><BidCard bid={t.subs[2]} /></td>
                   <td className="bid-cell"><BidCard bid={t.subs[3]} /></td>
-                  <td className="td-money">{fmtShort(t.updated)}<span className="sub-label">updated</span></td>
-                  <td className="td-money">{fmtShort(t.allocated)}<span className="sub-label">allocated</span></td>
-                  <td className="td-delta"><DeltaCell updated={t.updated} allocated={t.allocated} /></td>
+                  <td className="td-money">{t.estimated == null ? '—' : fmtShort(t.estimated)}<span className="sub-label">estimated</span></td>
+                  <td className="td-money">{t.finalizedLowest == null ? '—' : fmtShort(t.finalizedLowest)}<span className="sub-label">finalized lowest</span></td>
+                  <td className="td-money strong">{t.newBudget == null ? '—' : fmtShort(t.newBudget)}<span className="sub-label">new budget</span></td>
+                  <td className="td-delta"><BudgetDeltaCell newBudgetVal={t.newBudget} estimated={t.estimated} /></td>
                   <td className="td-toggle">
                     <button type="button" aria-label="expand" onClick={(e) => { e.stopPropagation(); toggle(i); }}>
                       <Icon name="chevron-right" />
@@ -878,7 +897,7 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                 </tr>
                 {expanded.has(i) ? (
                   <tr className="expand-row">
-                    <td colSpan={9}>
+                    <td colSpan={10}>
                       <div className="expand-content">
                         <div className="h">
                           <Icon name="timeline" /> Bidding-stage timeline · {t.name}
@@ -959,27 +978,28 @@ function BidCard({ bid }: { bid: PtSub | null | undefined }) {
   );
 }
 
-function DeltaCell({ updated, allocated }: { updated: number | null; allocated: number | null }) {
-  // Gap 12: SOP §7 thresholds — `>10%` over → red, `>5%` under → green, else
-  // neutral. Numbers within ±5% of the allocation are within the SOP's
-  // tolerance band and shouldn't read as "good" or "bad".
-  if (updated == null || allocated == null || allocated === 0) return <div className="delta zero">—</div>;
-  const diff = allocated - updated;
-  const pct = diff / allocated * 100;
+// Δ vs Estimate — New Budget measured against the planning Estimate.
+// New < Estimate → under budget (green `−$X`); New > Estimate → over
+// budget (red `+$X`); within ±5% → neutral. `—` when either side is unknown.
+function BudgetDeltaCell({ newBudgetVal, estimated }: { newBudgetVal: number | null; estimated: number | null }) {
+  if (newBudgetVal == null || estimated == null || estimated === 0) {
+    return <div className="delta zero">—</div>;
+  }
+  const diff = newBudgetVal - estimated;
+  const pct = diff / estimated * 100;
   if (Math.abs(pct) < 0.5) return <div className="delta zero">±0</div>;
-  const overOver10 = pct < -10;
-  const underBy5 = pct > 5;
-  const cls = overOver10 ? 'delta neg' : underBy5 ? 'delta pos' : 'delta neutral';
-  if (diff > 0) {
+  const within5 = Math.abs(pct) <= 5;
+  const cls = within5 ? 'delta neutral' : diff < 0 ? 'delta pos' : 'delta neg';
+  if (diff < 0) {
     return (
-      <div className={cls}>−{fmtShort(diff)}<br />
-        <span style={{ fontSize: 9, opacity: 0.85 }}>{pct.toFixed(1)}% under</span>
+      <div className={cls}>−{fmtShort(-diff)}<br />
+        <span style={{ fontSize: 9, opacity: 0.85 }}>{(-pct).toFixed(1)}% under</span>
       </div>
     );
   }
   return (
-    <div className={cls}>+{fmtShort(-diff)}<br />
-      <span style={{ fontSize: 9, opacity: 0.85 }}>{(-pct).toFixed(1)}% over</span>
+    <div className={cls}>+{fmtShort(diff)}<br />
+      <span style={{ fontSize: 9, opacity: 0.85 }}>{pct.toFixed(1)}% over</span>
     </div>
   );
 }

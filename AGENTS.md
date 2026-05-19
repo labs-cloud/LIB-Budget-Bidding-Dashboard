@@ -100,10 +100,49 @@ case-folding and dash/typo normalization. Unknown values log a
   queue (typically under 100).
 - `Cost Type` — `Hard Costs` | `Soft Costs` (pre-filled; do not edit)
 - `Budget Allocated` — currency (original approved estimate)
+- `Estimated Budget` — currency (the team's planning number; see "Budget
+  shape" below). Added by `scripts/add-estimated-budget-field.ts` /
+  `docs/manual-migrations.md`. May be missing on older lists — the dashboard
+  reads `null` and renders `—`.
 - `Updated Budget` — currency (auto-written by the lowest-bid automation — see §6)
 - `Subcontractors` — list of qualified companies for this Trade
 - `Start of Bidding Date` — date
 - `Project ID` — short text
+
+### Budget shape — Estimated / Finalized Lowest Bid / New Budget
+
+The team tracks each trade as **three** budget numbers in their SharePoint
+"Budget Outlook" xlsx, and the dashboard mirrors that column shape (per-trade
+on the project page, summed on both KPI strips):
+
+| Number | Source | Definition |
+|---|---|---|
+| `Estimated Budget` | ClickUp custom field | The planning number. `null` = unknown estimate; `0` = a genuine $0 line item (e.g. DOT Meeting). |
+| `Finalized Lowest Bid` | derived | `MIN(Bid/Contracted Amount)` across child Bidding tasks whose status is `Bid Received` or later (`Leveling`, `Leveled - Pending Review`, `Awarded`). `null` until a bid is observed. |
+| `New Budget` | derived | `Finalized Lowest Bid` if known, else `Estimated Budget`, else `Budget Allocated`, else `null`. The source-of-truth number for the trade. |
+
+Derivations live in `lib/derivations/budget.ts` (`finalizedLowestBid()`,
+`newBudget()`), each unit-tested in `lib/derivations/budget.test.ts`. Example
+rows from 800 Brady Ave's Budget Outlook: `DOT Meeting` → Estimated `$2,500`,
+Finalized blank, New Budget `$2,500`; `Foundation` → Estimated `$600,000`,
+Finalized `$3,030,000`, New Budget `$3,030,000`. Brady's footer totals:
+Estimated `$13,681,500` / Finalized `$7,650,167.70` / New Budget
+`$13,465,667.70`.
+
+### Bidding status normalizer — two layers
+
+`normalizeBiddingStatus()` (in `lib/clickup/types.ts`) resolves status text in
+two layers:
+
+1. **Canonical 9-stage** — the SOP dropdown values, case-folded, with the
+   `Bid Recieved` misspelling and em-/en-dash `Leveled - Pending Review`
+   variants collapsed.
+2. **Informal Excel vocab** — words the team types straight from the Budget
+   Outlook xlsx instead of the dropdown: `sent` → `RFP Sent`, `received` →
+   `Bid Received`, `finalized` → `Awarded`, `hold` → `Needs Rebid`, and
+   `Followed <any date>` (e.g. `Followed 4/21`) → `Followed Up`.
+
+Anything else returns `null` and logs a `console.warn` so drift stays visible.
 
 ### `02. Bidding` custom fields read
 - `Bid/Contracted Amount` — currency

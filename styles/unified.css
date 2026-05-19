@@ -446,6 +446,35 @@ html[data-theme='dark'] .unified-app .set-banner { background: rgba(200, 175, 14
 .unified-app .side-panel-body li .fix { font-size: 11px; color: var(--color-text-info); text-decoration: none; }
 .unified-app .side-panel-body li .fix:hover { text-decoration: underline; }
 
+/* Budget Outlook three-tile group (Estimated → Finalized → New Budget) */
+.unified-app .budget-tiles {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  margin: 0 0 24px;
+}
+.unified-app .budget-tiles.portfolio { margin-bottom: 16px; }
+.unified-app .budget-tiles .bt-tile {
+  background: var(--color-background-secondary);
+  border-radius: var(--border-radius-md);
+  padding: 14px 16px;
+}
+.unified-app .budget-tiles .bt-tile.primary {
+  background: var(--good-bg);
+  box-shadow: inset 0 0 0 0.5px rgba(48,164,108,0.3);
+}
+.unified-app .budget-tiles .bt-v {
+  font-size: 22px; font-weight: 500; letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums; color: var(--color-text-primary);
+}
+.unified-app .budget-tiles .bt-tile.primary .bt-v { color: var(--good-strong); }
+.unified-app .budget-tiles .bt-l {
+  font-size: 11px; color: var(--color-text-secondary); margin-top: 2px;
+}
+.unified-app .budget-tiles .bt-tile.primary .bt-l { color: var(--good-fg); }
+@media (max-width: 720px) { .unified-app .budget-tiles { grid-template-columns: 1fr; } }
+
+/* "New Budget" is the source-of-truth column — render it bolder. */
+.unified-app .td-money.strong { font-weight: 600; }
+
 /* Subcontractors table (Gap 8) */
 .unified-app .subs-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 14px 16px; }
 .unified-app .subs-card .h { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }

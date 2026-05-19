@@ -38,6 +38,29 @@ describe('normalizeBiddingStatus', () => {
     expect(normalizeBiddingStatus('LEVELED — PENDING REVIEW')).toBe('Leveled - Pending Review');
   });
 
+  it('maps informal Excel "Budget Outlook" vocabulary to canonical statuses', () => {
+    expect(normalizeBiddingStatus('sent')).toBe('RFP Sent');
+    expect(normalizeBiddingStatus('SENT')).toBe('RFP Sent');
+    expect(normalizeBiddingStatus(' received ')).toBe('Bid Received');
+    expect(normalizeBiddingStatus('finalized')).toBe('Awarded');
+    expect(normalizeBiddingStatus('Finalized')).toBe('Awarded');
+    expect(normalizeBiddingStatus('hold')).toBe('Needs Rebid');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('maps "Followed <date>" shorthand to "Followed Up"', () => {
+    expect(normalizeBiddingStatus('Followed 4/21')).toBe('Followed Up');
+    expect(normalizeBiddingStatus('followed 4/21/26')).toBe('Followed Up');
+    expect(normalizeBiddingStatus('Followed up 04-21-2026')).toBe('Followed Up');
+    expect(normalizeBiddingStatus('Followed')).toBe('Followed Up');
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('still warns on "Followed" with a non-date suffix', () => {
+    expect(normalizeBiddingStatus('Followed soon')).toBeNull();
+    expect(warnSpy).toHaveBeenCalledOnce();
+  });
+
   it('returns null and warns on unknown values', () => {
     expect(normalizeBiddingStatus('Bogus Status')).toBeNull();
     expect(warnSpy).toHaveBeenCalledOnce();

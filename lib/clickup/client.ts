@@ -359,6 +359,9 @@ export function shapeBudgetTask(
     tradeType: normalizeTradeType(readDropdownField(task, BUDGET_FIELDS.TradeType)),
     costType,
     budgetAllocated: readNumberField(task, BUDGET_FIELDS.BudgetAllocated),
+    // Estimated Budget is a new CU field — older lists won't have it yet, so
+    // readNumberField returns null and the dashboard renders "—".
+    estimatedBudget: readNumberField(task, BUDGET_FIELDS.EstimatedBudget),
     updatedBudget: readNumberField(task, BUDGET_FIELDS.UpdatedBudget),
     subcontractors: readReferenceNamesField(task, BUDGET_FIELDS.Subcontractors),
     budgetStatus: task.status?.status ?? '',
