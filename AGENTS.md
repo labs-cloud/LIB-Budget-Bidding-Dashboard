@@ -94,7 +94,10 @@ case-folding and dash/typo normalization. Unknown values log a
 - `Trades` — dropdown, 66 options (the Official Trades list — see §11 below)
 - `Trade Type` — `Biddable` | `Set` | `N/A` | `Pending` (four options live in
   ClickUp; SOP only documents the first two but the dashboard handles all
-  four). Both `null` and `Pending` count as "Trade Type pending".
+  four). Only the literal dropdown value `Pending` counts toward the
+  "Pending trade-type assignments" KPI; `null` / unset Trade Type is
+  pre-setup work and is excluded so the count reflects the live triage
+  queue (typically under 100).
 - `Cost Type` — `Hard Costs` | `Soft Costs` (pre-filled; do not edit)
 - `Budget Allocated` — currency (original approved estimate)
 - `Updated Budget` — currency (auto-written by the lowest-bid automation — see §6)
@@ -123,6 +126,35 @@ reads `N of N active projects · live from ClickUp` (matching the P&P
 dashboard convention). Trade-Type-pending KPI counts only budget tasks
 where `tradeType === 'Pending'` (the literal dropdown value); null /
 unset tradeType doesn't inflate the count.
+
+### Portfolio filters (SOP-derived)
+The filter row above the matrix uses SOP-derived labels:
+
+- **All bidding statuses** — populated from the 9 canonical values in the
+  `02. Bidding` list. Selecting one dims (but doesn't hide) cells in other
+  statuses so the broader portfolio context remains visible.
+- **All trade types** — `Biddable` / `Set` / `Pending`. Selecting `Set` shows
+  a banner above the matrix reminding readers that those trades skip
+  bidding entirely and route to `07. Finance`. Selecting `Pending` filters
+  to the triage queue.
+- **All team members** — hardcoded to the SOP §2 owners
+  (Isaac, Tuly, Shlome, Raizy, Malky, Luis, Shimon). Sourcing from
+  arbitrary ClickUp assignees pulls in P&P team members and confuses the
+  list.
+
+There is **no Phase field** on Budget or Bidding tasks in the SOP — the
+filter named "All phases" was removed in favour of "All bidding statuses".
+
+### Set / Bid List Confirmed status semantics
+- `tradeType === 'Set'` (literal dropdown value) means the trade skips the
+  bidding loop. The matrix renders these cells as a `SET ↗` chip linking to
+  the Budget task in ClickUp; the per-project view shows a `SET → Finance`
+  chip in the trade-row label. Set trades are **not** sync issues even when
+  they have `Budget Allocated > 0` and no Bidding children.
+- `budgetStatus === 'Bid List Confirmed'` is the terminal state on the
+  Budget task — set automatically when one of its child Bidding tasks
+  reaches `Awarded`. The dashboard surfaces this as a green-ringed dot in
+  the trade row label.
 
 ### Click-through navigation
 - Matrix column header → `/project/[folderId]` (full page nav, deep-linkable)
