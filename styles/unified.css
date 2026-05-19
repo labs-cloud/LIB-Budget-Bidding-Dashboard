@@ -331,6 +331,139 @@ html[data-theme='dark'] .unified-app .lib-hero .logo-box .lib-logo-svg { filter:
   background: var(--warn-bg); color: var(--warn-fg); font-size: 11px; font-weight: 600;
 }
 
+/* Bidding-status filter dim (Gap 1) */
+.unified-app table.matrix tbody td a.cell-link.dim { opacity: 0.18; filter: saturate(0.4); }
+.unified-app table.matrix tbody td a.cell-link.dim:hover { opacity: 0.6; }
+
+/* SET cell in the portfolio matrix (Gap 4) — replaces the "—" placeholder
+   for Trade Type = Set cells and deep-links to the Budget task. */
+.unified-app .set-cell {
+  display: inline-flex; align-items: center; gap: 2px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+  padding: 2px 6px; border-radius: 3px;
+  background: rgba(79, 70, 57, 0.12); color: #4f4639;
+  text-decoration: none;
+}
+.unified-app .set-cell:hover { background: rgba(79, 70, 57, 0.22); }
+html[data-theme='dark'] .unified-app .set-cell { background: rgba(200, 175, 140, 0.18); color: #d3c2a3; }
+
+/* SET → Finance chip in the per-project trade row label (Gap 4) */
+.unified-app .set-chip {
+  display: inline-flex; align-items: center; gap: 2px;
+  margin-left: 6px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 2px 6px; border-radius: 3px;
+  background: rgba(79, 70, 57, 0.12); color: #4f4639;
+  text-decoration: none;
+}
+.unified-app .set-chip:hover { background: rgba(79, 70, 57, 0.22); }
+html[data-theme='dark'] .unified-app .set-chip { background: rgba(200, 175, 140, 0.18); color: #d3c2a3; }
+
+/* Set-mode banner above the matrix */
+.unified-app .set-banner {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(79, 70, 57, 0.10);
+  color: var(--color-text-secondary);
+  padding: 8px 12px; border-radius: var(--border-radius-md);
+  font-size: 12px; margin-bottom: 10px;
+}
+html[data-theme='dark'] .unified-app .set-banner { background: rgba(200, 175, 140, 0.10); color: var(--color-text-secondary); }
+
+/* Budget-status dot (Gap 5) */
+.unified-app .bs-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 6px; vertical-align: 1px; flex-shrink: 0;
+}
+
+/* Clickable KPI (sync issues button — Gap 7) */
+.unified-app .kpi-button {
+  text-align: left; cursor: pointer; transition: filter .12s, transform .08s;
+  border: none; font: inherit; width: 100%;
+  display: block; appearance: none;
+}
+.unified-app .kpi-button:hover { filter: brightness(0.97); }
+.unified-app .kpi-button:active { transform: translateY(1px); }
+
+/* OneDrive paperclip (Gap 11) */
+.unified-app .proposal-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 4px;
+  color: var(--color-text-info); transition: background-color .12s, opacity .12s;
+  text-decoration: none;
+}
+.unified-app .proposal-link:hover { background: var(--info-bg); }
+.unified-app .proposal-link.empty { color: var(--color-text-tertiary); opacity: 0.45; cursor: default; }
+
+/* Neutral delta (within ±5%) — Gap 12 */
+.unified-app .td-delta .delta.neutral {
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  border: 0.5px solid var(--color-border-tertiary);
+}
+
+/* Sync issues side panel (Gap 7) */
+.unified-app .side-panel-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.36);
+  display: flex; justify-content: flex-end; z-index: 50;
+}
+.unified-app .side-panel {
+  width: min(480px, 100vw); max-width: 100vw; height: 100vh;
+  background: var(--color-background-primary);
+  border-left: 0.5px solid var(--color-border-secondary);
+  display: flex; flex-direction: column;
+}
+.unified-app .side-panel-h {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; padding: 18px 22px;
+  border-bottom: 0.5px solid var(--color-border-tertiary);
+}
+.unified-app .side-panel-h h2 { margin: 0; font-size: 16px; font-weight: 500; }
+.unified-app .side-panel-h p { margin: 4px 0 0; font-size: 12px; color: var(--color-text-secondary); }
+.unified-app .side-panel-h button {
+  width: 28px; height: 28px; font-size: 22px; line-height: 1;
+  color: var(--color-text-secondary); border-radius: 6px;
+}
+.unified-app .side-panel-h button:hover { background: var(--color-background-secondary); }
+.unified-app .side-panel-body { flex: 1; overflow-y: auto; padding: 14px 22px 22px; }
+.unified-app .side-panel-body section { margin-bottom: 18px; }
+.unified-app .side-panel-body h3 {
+  margin: 0 0 8px; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--color-text-secondary); display: flex; align-items: center; gap: 8px;
+}
+.unified-app .side-panel-body h3 .n {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  background: var(--warn-bg); color: var(--warn-fg); letter-spacing: 0; text-transform: none;
+}
+.unified-app .side-panel-body ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.unified-app .side-panel-body li {
+  padding: 10px 12px; border: 0.5px solid var(--color-border-tertiary);
+  border-radius: var(--border-radius-md); background: var(--color-background-secondary);
+}
+.unified-app .side-panel-body li .proj { font-size: 12px; font-weight: 500; }
+.unified-app .side-panel-body li .proj .trade { color: var(--color-text-secondary); font-weight: 400; }
+.unified-app .side-panel-body li .msg { font-size: 11px; color: var(--color-text-secondary); margin: 4px 0 6px; line-height: 1.4; }
+.unified-app .side-panel-body li .fix { font-size: 11px; color: var(--color-text-info); text-decoration: none; }
+.unified-app .side-panel-body li .fix:hover { text-decoration: underline; }
+
+/* Subcontractors table (Gap 8) */
+.unified-app .subs-card { background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 14px 16px; }
+.unified-app .subs-card .h { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.unified-app .subs-card .h .meta { margin-left: auto; font-size: 11px; color: var(--color-text-tertiary); font-weight: 400; }
+.unified-app .subs-card .h .meta a { color: var(--color-text-info); }
+.unified-app table.subs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.unified-app table.subs-table thead th {
+  padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.02em; color: var(--color-text-secondary);
+  border-bottom: 0.5px solid var(--color-border-tertiary); white-space: nowrap;
+}
+.unified-app table.subs-table thead th.r { text-align: right; }
+.unified-app table.subs-table tbody td { padding: 10px 12px; border-bottom: 0.5px solid var(--color-border-tertiary); vertical-align: middle; font-variant-numeric: tabular-nums; }
+.unified-app table.subs-table tbody td.r { text-align: right; }
+.unified-app table.subs-table tbody td.trades-cell { color: var(--color-text-secondary); font-size: 11px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unified-app table.subs-table tbody tr:hover td { background: rgba(0,0,0,0.02); }
+html[data-theme='dark'] .unified-app table.subs-table tbody tr:hover td { background: rgba(255,255,255,0.03); }
+
 .unified-app .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--color-text-secondary); margin-top: 14px; }
 .unified-app .legend .sw { display: inline-flex; gap: 6px; align-items: center; }
 

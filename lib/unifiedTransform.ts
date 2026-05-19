@@ -10,6 +10,9 @@ import {
   BudgetTask,
   ProjectSnapshot,
   STATUS_CODE,
+  SyncCategory,
+  SyncSeverity,
+  TradeTypeValue,
 } from './clickup/types';
 import { tradeKey } from './clickup/client';
 import { computeUpdatedBudgets, resolveWinningBid } from './clickup/budgetAutomation';
@@ -19,9 +22,35 @@ import { fmtUsd, daysSince } from './formatting';
 // ClickUp workspace ID (constant — verified in AGENTS.md §3). Used to
 // construct folder URLs; task URLs we always read from the API response.
 const CLICKUP_WORKSPACE_ID = '9017603275';
+const CLICKUP_SUBCONTRACTORS_LIST_ID = '901709498953';
 function clickupFolderUrl(folderId: string): string {
   return `https://app.clickup.com/${CLICKUP_WORKSPACE_ID}/v/o/f/${folderId}`;
 }
+function clickupListUrl(listId: string): string {
+  return `https://app.clickup.com/${CLICKUP_WORKSPACE_ID}/v/li/${listId}`;
+}
+
+// Compact codes for the Budget task's own workflow status — used by the
+// per-trade status dot in the matrix.
+export type BudgetStatusCode = 'TB' | 'OB' | 'BS' | 'BC';
+const BUDGET_STATUS_RANK: Record<BudgetStatusCode, number> = { TB: 0, OB: 1, BS: 2, BC: 3 };
+
+function budgetStatusCodeFromString(raw: string | null | undefined): BudgetStatusCode | null {
+  if (!raw) return null;
+  const v = raw.trim().toLowerCase();
+  if (v === 'to budget') return 'TB';
+  if (v === 'open for bidding') return 'OB';
+  if (v === 'budget set') return 'BS';
+  if (v === 'bid list confirmed') return 'BC';
+  return null;
+}
+
+export const BUDGET_STATUS_LABEL: Record<BudgetStatusCode, string> = {
+  TB: 'to budget',
+  OB: 'Open for Bidding',
+  BS: 'Budget Set',
+  BC: 'Bid List Confirmed',
+};
 
 // ----------------------------------------------------------------------------
 // Public shape — everything the client component needs to render.
@@ -51,7 +80,22 @@ export interface UnifiedPortfolio {
     rows: Array<{
       trade: string;
       cost: CostType;
-      cells: Array<{ code: StatusCode | null; name: string | null; syncIssues: number }>;
+      /** Most-advanced budget status seen across all cells in this row. */
+      budgetStatus: BudgetStatusCode | null;
+      cells: Array<{
+        code: StatusCode | null;
+        name: string | null;
+        syncIssues: number;
+        /**
+         * Trade Type for the cell's Budget task. 'Set' cells render a
+         * SET → Finance pill (Gap 4) rather than the standard "—" placeholder.
+         */
+        tradeType: TradeTypeValue | null;
+        /** Budget task URL (used by the Set pill click-through). */
+        budgetUrl: string | null;
+        /** Budget task workflow status code (drives the row-level dot). */
+        budgetStatus: BudgetStatusCode | null;
+      }>;
     }>;
     distribution: Array<{ code: StatusCode; n: number }>;
     totalCells: number;
@@ -65,6 +109,10 @@ export interface UnifiedPortfolio {
     rfp: string;
     url: string;
   }>;
+  leveling: LevelingEntry[];
+  syncIssueRows: SyncIssueRow[];
+  subcontractors: SubcontractorStats[];
+  subcontractorsListUrl: string;
   gantt: Array<{
     cost: CostType;
     label: 'Soft Cost' | 'Hard Cost';
@@ -163,6 +211,46 @@ export interface PtSub {
   rfp: string;
   last: string;
   url: string;
+  /** OneDrive proposal URL from the Bidding task's Link field (Gap 11). */
+  proposalUrl: string | null;
+}
+
+export interface LevelingEntry {
+  trade: string;
+  project: string;
+  projectFolderId: string;
+  subCount: number;
+  daysSinceFirstBid: number | null;
+  /** True when at least one bid has hit "Leveled - Pending Review". */
+  pendingReview: boolean;
+  /** ClickUp deep-link — the Bidding list filtered to this trade. */
+  url: string;
+}
+
+export interface SyncIssueRow {
+  project: string;
+  projectFolderId: string;
+  trade: string | null;
+  category: SyncCategory;
+  /** Human-readable bucket label (Gap 7). */
+  categoryLabel: string;
+  code: string;
+  message: string;
+  severity: SyncSeverity;
+  /** ClickUp URL to navigate the responsible task. */
+  fixUrl: string;
+}
+
+export interface SubcontractorStats {
+  name: string;
+  trades: string[];
+  totalBids: number;
+  awardedCount: number;
+  winRatePct: number;
+  activeRfps: number;
+  avgBidAmount: number | null;
+  medianResponseDays: number | null;
+  url: string;
 }
 
 export interface PtTrade {
@@ -179,6 +267,10 @@ export interface PtTrade {
   subs: (PtSub | null)[];
   /** ClickUp URL for the budget task (the trade row). */
   url: string;
+  /** Budget task workflow status (Gap 5). */
+  budgetStatus: BudgetStatusCode | null;
+  /** Trade Type — used by the SET → Finance chip on Set rows (Gap 4). */
+  tradeType: TradeTypeValue | null;
 }
 
 // ----------------------------------------------------------------------------
@@ -261,6 +353,36 @@ function relativeDays(days: number | null): string {
   return `${days}d ago`;
 }
 
+/**
+ * "Pending" is the auto-created placeholder subcontractor name used when a
+ * Bidding task is generated before a real sub has been assigned (SOP Part 4).
+ * Empty / whitespace-only / literally "Pending" don't count as real subs.
+ */
+function isRealSubcontractor(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const v = name.trim().toLowerCase();
+  if (!v) return false;
+  if (v === 'pending') return false;
+  return true;
+}
+
+const SYNC_CATEGORY_LABEL: Record<SyncCategory, string> = {
+  trade_type: 'Trade Type missing',
+  budget_allocated: 'Budget Allocated empty',
+  subcontractors: 'Subcontractors list issue',
+  bidding_tasks: 'Bidding tasks not generated',
+  budget_status: 'Budget status mismatch',
+  unexpected_bidding: 'Bidding on a Set trade',
+  unlinked_bid: 'Bid not linked to a Trade',
+};
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 // ----------------------------------------------------------------------------
 // Portfolio transform
 // ----------------------------------------------------------------------------
@@ -336,32 +458,44 @@ export function buildUnifiedPortfolio(input: {
     const k = tradeKey(trade);
     const cells = projects.map((p) => {
       const snap = snapByFolder.get(p.folderId);
-      if (!snap) return { code: null, name: null, syncIssues: 0 };
+      if (!snap) return { code: null, name: null, syncIssues: 0, tradeType: null, budgetUrl: null, budgetStatus: null };
       const tradeBids = snap.biddingTasks.filter((b) => b.trade && tradeKey(b.trade) === k);
       const group = snap.tradeGroups.find((g) => tradeKey(g.trade) === k);
       const budgetTask = snap.budgetTasks.find((bt) => tradeKey(bt.trade) === k);
       const syncIssues = budgetTask?.syncIssues.length ?? 0;
+      const tradeType = budgetTask?.tradeType ?? null;
+      const budgetUrl = budgetTask?.url ?? null;
+      const budgetStatus = budgetStatusCodeFromString(budgetTask?.budgetStatus);
       const statuses = tradeBids.map((b) => b.status);
       if (statuses.length === 0 && group) statuses.push(group.status);
       const winning = STATUS_PRIORITY.find((s) => statuses.includes(s));
-      if (!winning) return { code: null, name: null, syncIssues };
-      return { code: STATUS_CODE[winning] as StatusCode, name: winning, syncIssues };
+      if (!winning) return { code: null, name: null, syncIssues, tradeType, budgetUrl, budgetStatus };
+      return { code: STATUS_CODE[winning] as StatusCode, name: winning, syncIssues, tradeType, budgetUrl, budgetStatus };
     });
-    return { trade, cost: costOf(trade), cells };
+    // Per-row aggregate budget status — the most-advanced stage seen across
+    // any project. Drives the row-level dot in the portfolio matrix.
+    let topStatus: BudgetStatusCode | null = null;
+    let topRank = -1;
+    for (const c of cells) {
+      if (!c.budgetStatus) continue;
+      const r = BUDGET_STATUS_RANK[c.budgetStatus];
+      if (r > topRank) { topRank = r; topStatus = c.budgetStatus; }
+    }
+    return { trade, cost: costOf(trade), budgetStatus: topStatus, cells };
   });
-  // Drop trade rows with no real cells or sync warnings anywhere.
-  const filteredRows = rows.filter((r) => r.cells.some((c) => c.code != null || c.syncIssues > 0));
+  // Drop trade rows with no real cells or sync warnings or Set cells anywhere.
+  const filteredRows = rows.filter((r) =>
+    r.cells.some((c) => c.code != null || c.syncIssues > 0 || c.tradeType === 'Set')
+  );
 
   // KPIs.
   let inFlight = 0;
-  let awaitingFollowUp = 0;
   let awaitingStale = 0;
   let readyToAward = 0;
   for (const r of filteredRows) {
     for (const c of r.cells) {
       if (!c.name) continue;
       if (IN_FLIGHT_STATUSES.includes(c.name as BiddingStatus)) inFlight += 1;
-      if (c.name === 'RFP Sent' || c.name === 'Followed Up') awaitingFollowUp += 1;
       if (c.name === 'Leveled - Pending Review') readyToAward += 1;
     }
   }
@@ -374,14 +508,15 @@ export function buildUnifiedPortfolio(input: {
       }
     }
   }
-  // Trade Type pending — setup work, not a broken sync. Count both blank and
-  // explicit Pending values so the dashboard shows how much Budget setup is
-  // still waiting before Bidding automation should be expected.
+  // Trade Type pending — counts ONLY Budget tasks where Trade Type is the
+  // literal "Pending" dropdown value (Gap 3). Null / unset Trade Type means
+  // the field hasn't been touched yet and isn't a queue item; counting those
+  // inflated the number into the thousands.
   let tradeTypePending = 0;
   const pendingProjects = new Set<string>();
   for (const s of snapshots) {
     for (const bt of s.budgetTasks) {
-      if (bt.tradeType != null && bt.tradeType !== 'Pending') continue;
+      if (bt.tradeType !== 'Pending') continue;
       tradeTypePending += 1;
       pendingProjects.add(s.folderId);
     }
@@ -389,16 +524,22 @@ export function buildUnifiedPortfolio(input: {
   const syncIssues = snapshots.reduce((sum, s) => sum + s.syncHealth.total, 0);
   const syncProjects = snapshots.filter((s) => s.syncHealth.total > 0).length;
 
-  // Stale follow-up list — top 5 oldest RFP-sent or followed-up bids across all projects.
+  // Stale follow-up list — top 5 oldest RFP-sent / followed-up bids across
+  // all projects. Gap 10: drop placeholder bids whose Subcontractor is the
+  // auto-created "Pending" stub (no real sub assigned yet); a follow-up only
+  // makes sense once we know who to nag. Also drop status=Not Started
+  // children that slip through the in-flight filter via derived-status edge
+  // cases.
   const projectNameById = new Map(snapshots.map((s) => [s.folderId, s.folderName]));
   const staleAll: UnifiedPortfolio['stale'] = [];
   for (const s of snapshots) {
     for (const b of s.biddingTasks) {
-      if (!IN_FLIGHT_STATUSES.includes(b.status)) continue;
+      if (b.status !== 'RFP Sent' && b.status !== 'Followed Up') continue;
+      if (!isRealSubcontractor(b.subcontractor)) continue;
       const d = daysSince(b.dateUpdated);
       if (d == null || d < 7) continue;
       staleAll.push({
-        sub: b.subcontractor || '(no name)',
+        sub: b.subcontractor,
         trade: b.trade ?? 'Unknown trade',
         project: projectNameById.get(s.folderId) ?? '',
         projectFolderId: s.folderId,
@@ -409,6 +550,17 @@ export function buildUnifiedPortfolio(input: {
     }
   }
   staleAll.sort((a, b) => b.days - a.days);
+
+  // Recompute the awaitingFollowUp KPI using the same Gap-10 filter so the
+  // card matches the list it summarises.
+  let awaitingFollowUpReal = 0;
+  for (const s of snapshots) {
+    for (const b of s.biddingTasks) {
+      if (b.status !== 'RFP Sent' && b.status !== 'Followed Up') continue;
+      if (!isRealSubcontractor(b.subcontractor)) continue;
+      awaitingFollowUpReal += 1;
+    }
+  }
 
   // Distribution.
   const distCounts = new Map<StatusCode, number>();
@@ -432,6 +584,18 @@ export function buildUnifiedPortfolio(input: {
   // Per-project transforms.
   const projectTransforms = projects.map((p) => transformProject(snapByFolder.get(p.folderId)!));
 
+  // Leveling panel (Gap 6) — any bid currently in Leveling / Leveled - Pending
+  // Review, grouped by project + trade.
+  const leveling = buildLevelingEntries(snapshots);
+
+  // Sync issue rows (Gap 7) — flatten every per-task SyncIssue into a row the
+  // side panel can render with a Fix-in-ClickUp link.
+  const syncIssueRows = buildSyncIssueRows(snapshots);
+
+  // Subcontractors view (Gap 8) — aggregate per-sub stats across the
+  // portfolio.
+  const subcontractors = buildSubcontractorStats(snapshots);
+
   // Hero refresh string.
   const sec = Math.max(1, Math.floor((Date.now() - refreshedAt) / 1000));
   const refreshedAgo = sec < 90 ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`;
@@ -444,18 +608,23 @@ export function buildUnifiedPortfolio(input: {
     hero: { inFlight, activeProjects: snapshots.length },
     kpis: {
       inFlight, inFlightDelta: 'across all trades',
-      awaitingFollowUp, awaitingStale,
+      awaitingFollowUp: awaitingFollowUpReal, awaitingStale,
       readyToAward, readyDelta: 'leveled · pending review',
       tradeTypePending, tradeTypePendingProjects: pendingProjects.size,
       syncIssues, syncProjects,
     },
     matrix: { projects, rows: filteredRows, distribution, totalCells },
     stale: staleAll.slice(0, 5),
+    leveling,
+    syncIssueRows,
+    subcontractors,
+    subcontractorsListUrl: clickupListUrl(CLICKUP_SUBCONTRACTORS_LIST_ID),
     gantt,
     ganttAxis,
     projects: projectTransforms,
   };
 }
+
 
 // ----------------------------------------------------------------------------
 // Portfolio gantt: per-trade aggregated bar across all projects.
@@ -776,6 +945,7 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
           rfp: fmtMonthDay(dateMsOf(b.dateUpdated)),
           last: relativeDays(daysSince(b.dateUpdated)),
           url: b.url,
+          proposalUrl: b.link,
         };
       });
 
@@ -792,6 +962,8 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         allocated,
         subs,
         url: bt.url,
+        budgetStatus: budgetStatusCodeFromString(bt.budgetStatus),
+        tradeType: bt.tradeType,
       } satisfies PtTrade;
     });
 
@@ -878,6 +1050,167 @@ function projectMetaFor(snapshot: ProjectSnapshot): ProjectMeta {
     projectId,
     phase,
   };
+}
+
+// ----------------------------------------------------------------------------
+// Aggregate panels (Gap 6, 7, 8)
+// ----------------------------------------------------------------------------
+
+const LEVELING_STATUSES: BiddingStatus[] = ['Leveling', 'Leveled - Pending Review'];
+
+function buildLevelingEntries(snapshots: ProjectSnapshot[]): LevelingEntry[] {
+  const out: LevelingEntry[] = [];
+  for (const s of snapshots) {
+    const byTrade = new Map<string, BiddingTask[]>();
+    for (const b of s.biddingTasks) {
+      if (!LEVELING_STATUSES.includes(b.status)) continue;
+      if (!b.trade) continue;
+      const k = tradeKey(b.trade);
+      const arr = byTrade.get(k) ?? [];
+      arr.push(b);
+      byTrade.set(k, arr);
+    }
+    for (const [, bids] of byTrade) {
+      const trade = bids[0].trade as string;
+      // Earliest bid-received date drives the day counter — that's when the
+      // leveling clock starts in the SOP. We approximate with the oldest
+      // dateUpdated across the leveling bids.
+      const firstBidMs = bids
+        .map((b) => dateMsOf(b.dateUpdated))
+        .filter((d): d is number => d != null)
+        .sort((a, b) => a - b)[0];
+      const days = firstBidMs != null ? Math.floor((Date.now() - firstBidMs) / 86_400_000) : null;
+      const listId = bids[0].listId;
+      out.push({
+        trade,
+        project: s.folderName,
+        projectFolderId: s.folderId,
+        subCount: bids.length,
+        daysSinceFirstBid: days,
+        pendingReview: bids.some((b) => b.status === 'Leveled - Pending Review'),
+        url: listId ? clickupListUrl(listId) : clickupFolderUrl(s.folderId),
+      });
+    }
+  }
+  // Pending-review first, then by age desc.
+  out.sort((a, b) => {
+    if (a.pendingReview !== b.pendingReview) return a.pendingReview ? -1 : 1;
+    return (b.daysSinceFirstBid ?? 0) - (a.daysSinceFirstBid ?? 0);
+  });
+  return out;
+}
+
+function buildSyncIssueRows(snapshots: ProjectSnapshot[]): SyncIssueRow[] {
+  const rows: SyncIssueRow[] = [];
+  for (const s of snapshots) {
+    for (const bt of s.budgetTasks) {
+      for (const issue of bt.syncIssues) {
+        rows.push({
+          project: s.folderName,
+          projectFolderId: s.folderId,
+          trade: bt.trade,
+          category: issue.category,
+          categoryLabel: SYNC_CATEGORY_LABEL[issue.category] ?? issue.category,
+          code: issue.code,
+          message: issue.message,
+          severity: issue.severity,
+          fixUrl: bt.url,
+        });
+      }
+    }
+    // Project-level issues live on the SyncHealthSummary only — surface them
+    // via the unlinked-bid messages we emit at sync time. Iterate biddingTasks
+    // to recover the per-task fixUrl for bids without a Trade (the only
+    // current source of project-level issues).
+    for (const b of s.biddingTasks) {
+      if (b.trade) continue;
+      rows.push({
+        project: s.folderName,
+        projectFolderId: s.folderId,
+        trade: null,
+        category: 'unlinked_bid',
+        categoryLabel: SYNC_CATEGORY_LABEL.unlinked_bid,
+        code: 'bid_missing_trade',
+        message: `Bidding task "${b.subcontractor}" is missing a Trade value, so it cannot sync to Budget.`,
+        severity: 'warning',
+        fixUrl: b.url,
+      });
+    }
+  }
+  // Error-first, then warning-first, then by project name.
+  rows.sort((a, b) => {
+    if (a.severity !== b.severity) {
+      if (a.severity === 'error') return -1;
+      if (b.severity === 'error') return 1;
+      if (a.severity === 'warning') return -1;
+      if (b.severity === 'warning') return 1;
+    }
+    return a.project.localeCompare(b.project);
+  });
+  return rows;
+}
+
+const ACTIVE_RFP_STATUSES: BiddingStatus[] = ['RFP Sent', 'Followed Up', 'Bid Received'];
+
+function buildSubcontractorStats(snapshots: ProjectSnapshot[]): SubcontractorStats[] {
+  const bySub = new Map<string, {
+    name: string;
+    url: string;
+    trades: Set<string>;
+    bids: BiddingTask[];
+  }>();
+  for (const s of snapshots) {
+    for (const b of s.biddingTasks) {
+      if (!isRealSubcontractor(b.subcontractor)) continue;
+      const key = b.subcontractor.trim().toLowerCase();
+      const entry = bySub.get(key) ?? {
+        name: b.subcontractor.trim(),
+        url: b.subcontractorUrl ?? clickupListUrl(CLICKUP_SUBCONTRACTORS_LIST_ID),
+        trades: new Set<string>(),
+        bids: [],
+      };
+      if (!entry.url || entry.url.includes('/v/li/')) {
+        if (b.subcontractorUrl) entry.url = b.subcontractorUrl;
+      }
+      if (b.trade) entry.trades.add(b.trade);
+      entry.bids.push(b);
+      bySub.set(key, entry);
+    }
+  }
+  const out: SubcontractorStats[] = [];
+  for (const entry of bySub.values()) {
+    const total = entry.bids.length;
+    const awarded = entry.bids.filter((b) => b.status === 'Awarded').length;
+    const active = entry.bids.filter((b) => ACTIVE_RFP_STATUSES.includes(b.status)).length;
+    const amounts = entry.bids
+      .map((b) => b.bidAmount)
+      .filter((n): n is number => n != null && n > 0);
+    const avg = amounts.length > 0 ? amounts.reduce((s, n) => s + n, 0) / amounts.length : null;
+    // Median response = days from RFP-sent (dateUpdated on an RFP Sent bid)
+    // to Bid Received / Awarded. We approximate with the bid task's age in
+    // days at the moment a bid amount appeared. When awardDate is set we
+    // prefer that; otherwise dateUpdated on a respondent bid.
+    const responseDays = entry.bids
+      .filter((b) => b.bidAmount != null && b.bidAmount > 0)
+      .map((b) => daysSince(b.dateUpdated))
+      .filter((d): d is number => d != null && d >= 0);
+    out.push({
+      name: entry.name,
+      trades: Array.from(entry.trades).sort(),
+      totalBids: total,
+      awardedCount: awarded,
+      winRatePct: total > 0 ? Math.round((awarded / total) * 100) : 0,
+      activeRfps: active,
+      avgBidAmount: avg,
+      medianResponseDays: median(responseDays),
+      url: entry.url,
+    });
+  }
+  out.sort((a, b) => {
+    if (a.activeRfps !== b.activeRfps) return b.activeRfps - a.activeRfps;
+    return b.totalBids - a.totalBids;
+  });
+  return out;
 }
 
 // Re-export the BIDDING_STATUSES literal so callers don't need to dive into ./clickup/types.

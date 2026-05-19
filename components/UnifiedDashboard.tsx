@@ -1,22 +1,51 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import '@/styles/unified.css';
 import type {
+  BudgetStatusCode,
   GanttRow,
+  LevelingEntry,
   PtSub,
   PtTrade,
   StatusCode,
+  SubcontractorStats,
+  SyncIssueRow,
   UnifiedPortfolio,
   UnifiedProject,
 } from '@/lib/unifiedTransform';
+import { BUDGET_STATUS_LABEL } from '@/lib/unifiedTransform';
+import { BIDDING_STATUSES, type BiddingStatus, type TradeTypeValue } from '@/lib/clickup/types';
 
-type PortfolioView = 'pf-matrix' | 'pf-gantt';
+type PortfolioView = 'pf-matrix' | 'pf-gantt' | 'pf-subs';
 type ProjectView = 'pj-timeline' | 'pj-matrix';
 type View = PortfolioView | ProjectView;
 
-const PORTFOLIO_VIEWS: PortfolioView[] = ['pf-matrix', 'pf-gantt'];
+const PORTFOLIO_VIEWS: PortfolioView[] = ['pf-matrix', 'pf-gantt', 'pf-subs'];
 const PROJECT_VIEWS: ProjectView[] = ['pj-timeline', 'pj-matrix'];
+
+// SOP Section 2 (verbatim): the seven people who own the Budget & Bidding
+// workflow. The "All team members" dropdown is sourced from this list so it
+// doesn't pull in arbitrary assignees from unrelated trades (e.g. the P&P
+// team that shows up when we harvested from ClickUp). Gap 9.
+const TEAM_MEMBERS = [
+  'Isaac Adler',
+  'Tuly Steinmetz',
+  'Shlome Friedman',
+  'Raizy Hollander',
+  'Malky Teitelbaum',
+  'Luis Núñez',
+  'Shimon Katz',
+];
+
+const TRADE_TYPE_OPTIONS: TradeTypeValue[] = ['Biddable', 'Set', 'Pending'];
+
+const BUDGET_STATUS_COLOR: Record<BudgetStatusCode, string> = {
+  TB: '#bcb6ad',
+  OB: '#0091ff',
+  BS: '#7c50c8',
+  BC: '#30a46c',
+};
 
 function isProjectView(v: View): v is ProjectView {
   return (PROJECT_VIEWS as readonly View[]).includes(v);
@@ -52,6 +81,12 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
   });
   const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  // Portfolio filters (Gaps 1, 2). 'all' = no filter.
+  const [filterStatus, setFilterStatus] = useState<BiddingStatus | 'all'>('all');
+  const [filterTradeType, setFilterTradeType] = useState<TradeTypeValue | 'all'>('all');
+  const [filterCost, setFilterCost] = useState<'hard' | 'soft' | 'all'>('all');
+  // Sync issue side panel (Gap 7).
+  const [syncPanelOpen, setSyncPanelOpen] = useState(false);
 
   useEffect(() => {
     const stored = (typeof window !== 'undefined' && localStorage.getItem('bb-theme')) as 'light' | 'dark' | null;
@@ -124,15 +159,34 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
           <div className="filter-row">
             <input type="search" placeholder="Search projects, trades, subs…" />
             <select defaultValue="">
+              {/* Gap 9: hardcoded to the 7 SOP team members. */}
               <option value="">All team members</option>
-              <option>Raizy Hollander</option>
-              <option>Malky Teitelbaum</option>
-              <option>Luis Núñez</option>
-              <option>Shimon Katz</option>
-              <option>Shlome Friedman</option>
+              {TEAM_MEMBERS.map((m) => (<option key={m}>{m}</option>))}
             </select>
-            <select defaultValue=""><option value="">All phases</option><option>Pre-construction</option><option>Bidding</option><option>Construction</option></select>
-            <select defaultValue=""><option value="">All cost types</option><option>Hard cost</option><option>Soft cost</option></select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as BiddingStatus | 'all')}
+            >
+              {/* Gap 1: 9 canonical Bidding statuses from the SOP. */}
+              <option value="all">All bidding statuses</option>
+              {BIDDING_STATUSES.map((s) => (<option key={s} value={s}>{s}</option>))}
+            </select>
+            <select
+              value={filterTradeType}
+              onChange={(e) => setFilterTradeType(e.target.value as TradeTypeValue | 'all')}
+            >
+              {/* Gap 2: Trade Type triage. */}
+              <option value="all">All trade types</option>
+              {TRADE_TYPE_OPTIONS.map((t) => (<option key={t} value={t}>{t}</option>))}
+            </select>
+            <select
+              value={filterCost}
+              onChange={(e) => setFilterCost(e.target.value as 'hard' | 'soft' | 'all')}
+            >
+              <option value="all">All cost types</option>
+              <option value="hard">Hard cost</option>
+              <option value="soft">Soft cost</option>
+            </select>
             <div className="spacer" />
             <div className="view-tabs">
               <button type="button" className={view === 'pf-matrix' ? 'active' : ''} onClick={() => setView('pf-matrix')}>
@@ -141,12 +195,22 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
               <button type="button" className={view === 'pf-gantt' ? 'active' : ''} onClick={() => setView('pf-gantt')}>
                 <Icon name="timeline" /> Gantt
               </button>
+              <button type="button" className={view === 'pf-subs' ? 'active' : ''} onClick={() => setView('pf-subs')}>
+                <Icon name="users" /> Subcontractors
+              </button>
             </div>
           </div>
         ) : null}
 
         {!inProject ? (
-          <PortfolioShell data={data} view={view as PortfolioView} />
+          <PortfolioShell
+            data={data}
+            view={view as PortfolioView}
+            filterStatus={filterStatus}
+            filterTradeType={filterTradeType}
+            filterCost={filterCost}
+            onOpenSyncPanel={() => setSyncPanelOpen(true)}
+          />
         ) : project ? (
           <ProjectShell project={project} view={view as ProjectView} onChange={(v) => setView(v)} initialTrade={initialTrade} />
         ) : (
@@ -160,6 +224,9 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
           {data.source === 'live' ? `live · refreshed ${data.refreshedAgo}` : 'mock fixtures (set CLICKUP_API_TOKEN)'}
         </div>
       </div>
+      {syncPanelOpen ? (
+        <SyncIssuesPanel rows={data.syncIssueRows} onClose={() => setSyncPanelOpen(false)} />
+      ) : null}
     </div>
   );
 }
@@ -212,8 +279,15 @@ function Hero({
 // ----------------------------------------------------------------------------
 
 function PortfolioShell({
-  data, view,
-}: { data: UnifiedPortfolio; view: PortfolioView }) {
+  data, view, filterStatus, filterTradeType, filterCost, onOpenSyncPanel,
+}: {
+  data: UnifiedPortfolio;
+  view: PortfolioView;
+  filterStatus: BiddingStatus | 'all';
+  filterTradeType: TradeTypeValue | 'all';
+  filterCost: 'hard' | 'soft' | 'all';
+  onOpenSyncPanel: () => void;
+}) {
   const k = data.kpis;
   return (
     <>
@@ -221,13 +295,28 @@ function PortfolioShell({
         <div className="kpi info"><div className="l">Bids in flight</div><div className="v">{k.inFlight}</div><div className="s">{k.inFlightDelta}</div></div>
         <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">{k.awaitingFollowUp}</div><div className="s">{k.awaitingStale} stale &gt;7d</div></div>
         <div className="kpi good"><div className="l">Ready to award</div><div className="v">{k.readyToAward}</div><div className="s">{k.readyDelta}</div></div>
-        <div className="kpi neutral"><div className="l">Trades pending</div><div className="v">{k.tradeTypePending}</div><div className="s">across {k.tradeTypePendingProjects} projects</div></div>
-        <div className="kpi warn"><div className="l">Sync issues</div><div className="v">{k.syncIssues}</div><div className="s">across {k.syncProjects} projects</div></div>
+        <div className="kpi neutral">
+          <div className="l">Pending trade-type assignments</div>
+          <div className="v">{k.tradeTypePending}</div>
+          <div className="s">across {k.tradeTypePendingProjects} projects</div>
+        </div>
+        <button
+          type="button"
+          className="kpi warn kpi-button"
+          onClick={onOpenSyncPanel}
+          title="Open sync issue side panel"
+        >
+          <div className="l">Sync issues <span className="ext-icon" aria-hidden>↗</span></div>
+          <div className="v">{k.syncIssues}</div>
+          <div className="s">across {k.syncProjects} projects · click to inspect</div>
+        </button>
       </div>
 
       {view === 'pf-matrix'
-        ? <PortfolioMatrix data={data} />
-        : <PortfolioGantt data={data} />}
+        ? <PortfolioMatrix data={data} filterStatus={filterStatus} filterTradeType={filterTradeType} filterCost={filterCost} />
+        : view === 'pf-gantt'
+          ? <PortfolioGantt data={data} />
+          : <SubcontractorsView subs={data.subcontractors} listUrl={data.subcontractorsListUrl} />}
     </>
   );
 }
@@ -236,17 +325,43 @@ function slugifyTrade(t: string): string {
   return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
+function PortfolioMatrix({
+  data, filterStatus, filterTradeType, filterCost,
+}: {
+  data: UnifiedPortfolio;
+  filterStatus: BiddingStatus | 'all';
+  filterTradeType: TradeTypeValue | 'all';
+  filterCost: 'hard' | 'soft' | 'all';
+}) {
   const stale = data.stale;
+
+  // Filter rows by cost + tradeType. Cells get a "dim" treatment for the
+  // status filter so the matrix still shows the broader context.
+  const filteredRows = useMemo(() => data.matrix.rows.filter((r) => {
+    if (filterCost !== 'all' && r.cost !== filterCost) return false;
+    if (filterTradeType !== 'all') {
+      const hit = r.cells.some((c) => c.tradeType === filterTradeType);
+      if (!hit) return false;
+    }
+    return true;
+  }), [data.matrix.rows, filterCost, filterTradeType]);
+
+  const setBannerVisible = filterTradeType === 'Set';
+
   return (
     <div className="body-wrap">
       <div className="panel-card">
         <div className="h">
           <Icon name="grid-dots" /> Portfolio bidding matrix
           <span className="meta">
-            {data.matrix.rows.length} trades × {data.matrix.projects.length} projects · click a project header to drill in
+            {filteredRows.length} trades × {data.matrix.projects.length} projects · click a project header to drill in
           </span>
         </div>
+        {setBannerVisible ? (
+          <div className="set-banner">
+            <Icon name="external-link" size={13} /> These trades skip bidding — see the project&apos;s Finance list (07. Finance) for cost detail.
+          </div>
+        ) : null}
         <div className="matrix-scroll">
           <table className="matrix">
             <thead>
@@ -266,9 +381,10 @@ function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
               </tr>
             </thead>
             <tbody>
-              {data.matrix.rows.map((r) => (
+              {filteredRows.map((r) => (
                 <tr key={r.trade}>
                   <td className="trade-name" title={r.trade}>
+                    <BudgetStatusDot status={r.budgetStatus} />
                     <span className={`ctag ${r.cost}`}>{r.cost === 'hard' ? 'H' : 'S'}</span>
                     <a
                       href={`/trade/${encodeURIComponent(r.trade)}`}
@@ -280,6 +396,25 @@ function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
                   </td>
                   {r.cells.map((cell, ci) => {
                     const proj = data.matrix.projects[ci];
+                    // Gap 4: Set cells render a SET → Finance pill that opens
+                    // the Budget task in ClickUp (the Finance list isn't read
+                    // by the dashboard but the Budget task carries the
+                    // workflow handoff context).
+                    if (cell.tradeType === 'Set' && cell.budgetUrl) {
+                      return (
+                        <td key={ci}>
+                          <a
+                            href={cell.budgetUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="set-cell"
+                            title={`SET → Finance · ${proj.name} · ${r.trade}`}
+                          >
+                            SET<span className="ext-icon" aria-hidden>↗</span>
+                          </a>
+                        </td>
+                      );
+                    }
                     if (!cell.code) {
                       return (
                         <td key={ci}>
@@ -293,11 +428,12 @@ function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
                       );
                     }
                     const href = `/project/${encodeURIComponent(proj.folderId)}?trade=${encodeURIComponent(r.trade)}#trade-row-${slugifyTrade(r.trade)}`;
+                    const dim = filterStatus !== 'all' && cell.name !== filterStatus;
                     return (
                       <td key={ci}>
                         <a
                           href={href}
-                          className="cell-link"
+                          className={`cell-link${dim ? ' dim' : ''}`}
                           title={`Open ${proj.name} · ${r.trade} (${cell.name ?? cell.code})`}
                         >
                           <span className={`bb-cell-pill ${cell.code.toLowerCase()}`}>{cell.code}</span>
@@ -319,9 +455,19 @@ function PortfolioMatrix({ data }: { data: UnifiedPortfolio }) {
             </span>
           ))}
         </div>
+        <div className="legend" style={{ marginTop: 8 }}>
+          {(Object.keys(BUDGET_STATUS_LABEL) as BudgetStatusCode[]).map((k) => (
+            <span key={k} className="sw">
+              <span className="bs-dot" style={{ background: BUDGET_STATUS_COLOR[k], boxShadow: k === 'BC' ? '0 0 0 1.5px #fff, 0 0 0 2.5px #30a46c' : 'none' }} />
+              {BUDGET_STATUS_LABEL[k]}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="panel-card">
+        <LevelingPanel entries={data.leveling} />
+        <div style={{ height: 18 }} />
         <div className="h">
           <Icon name="clock-exclamation" /> Awaiting follow-up
           <span className="meta">{stale.length} stale · sorted by days since last update</span>
@@ -684,6 +830,7 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                   onClick={() => toggle(i)}
                 >
                   <td className="td-trade">
+                    <BudgetStatusDot status={t.budgetStatus} />
                     <span className={`ctag ${t.cost}`}>{t.cost === 'hard' ? 'H' : 'S'}</span>
                     <a
                       className="name ext"
@@ -695,6 +842,18 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
                     >
                       {t.name}<span className="ext-icon" aria-hidden>↗</span>
                     </a>
+                    {t.tradeType === 'Set' ? (
+                      <a
+                        className="set-chip ext"
+                        href={t.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Trade Type = Set · routed to Finance (07. Finance)"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        SET → Finance<span className="ext-icon" aria-hidden>↗</span>
+                      </a>
+                    ) : null}
                     {t.syncStatus !== 'ok' ? (
                       <span className={`sync-badge ${t.syncStatus}`} title={t.syncIssues.join(' ')}>
                         {t.syncIssues.length}
@@ -748,6 +907,9 @@ function ProjectMatrix({ project, initialTrade }: { project: UnifiedProject; ini
 function BidCard({ bid }: { bid: PtSub | null | undefined }) {
   if (!bid) return <div className="bid-card empty">—</div>;
   const cls = 'bid-card' + (bid.isLow ? ' is-low' : '');
+  // Gap 11: paper-clip linking to the OneDrive proposal folder. Show the icon
+  // on Bid Received / Awarded cells; faded when the Link field is empty.
+  const showProposal = bid.status === 'BR' || bid.status === 'AW' || bid.status === 'LV' || bid.status === 'LP';
   return (
     <a
       className={cls}
@@ -763,25 +925,60 @@ function BidCard({ bid }: { bid: PtSub | null | undefined }) {
         {bid.amount == null
           ? <span className="amt dim">awaiting</span>
           : <span className="amt">{fmtShort(bid.amount)}</span>}
+        {showProposal ? (
+          bid.proposalUrl ? (
+            // Rendered as a button (not an <a>) so we don't nest an anchor
+            // inside the outer bid-card <a>. The click pre-empts the parent
+            // and opens the proposal URL in a new tab.
+            <button
+              type="button"
+              className="proposal-link"
+              title="Open OneDrive proposal folder (new tab)"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof window !== 'undefined') {
+                  window.open(bid.proposalUrl as string, '_blank', 'noopener,noreferrer');
+                }
+              }}
+            >
+              <Icon name="paperclip" size={12} />
+            </button>
+          ) : (
+            <span
+              className="proposal-link empty"
+              title="No proposal uploaded yet"
+              aria-label="No proposal uploaded yet"
+            >
+              <Icon name="paperclip" size={12} />
+            </span>
+          )
+        ) : null}
       </div>
     </a>
   );
 }
 
 function DeltaCell({ updated, allocated }: { updated: number | null; allocated: number | null }) {
+  // Gap 12: SOP §7 thresholds — `>10%` over → red, `>5%` under → green, else
+  // neutral. Numbers within ±5% of the allocation are within the SOP's
+  // tolerance band and shouldn't read as "good" or "bad".
   if (updated == null || allocated == null || allocated === 0) return <div className="delta zero">—</div>;
   const diff = allocated - updated;
   const pct = diff / allocated * 100;
-  if (Math.abs(diff) < 1) return <div className="delta zero">±0</div>;
+  if (Math.abs(pct) < 0.5) return <div className="delta zero">±0</div>;
+  const overOver10 = pct < -10;
+  const underBy5 = pct > 5;
+  const cls = overOver10 ? 'delta neg' : underBy5 ? 'delta pos' : 'delta neutral';
   if (diff > 0) {
     return (
-      <div className="delta pos">−{fmtShort(diff)}<br />
+      <div className={cls}>−{fmtShort(diff)}<br />
         <span style={{ fontSize: 9, opacity: 0.85 }}>{pct.toFixed(1)}% under</span>
       </div>
     );
   }
   return (
-    <div className="delta neg">+{fmtShort(-diff)}<br />
+    <div className={cls}>+{fmtShort(-diff)}<br />
       <span style={{ fontSize: 9, opacity: 0.85 }}>{(-pct).toFixed(1)}% over</span>
     </div>
   );
@@ -865,6 +1062,182 @@ function MiniGantt({ trade }: { trade: PtTrade }) {
 }
 
 // ----------------------------------------------------------------------------
+// Budget status dot (Gap 5) — small colored marker rendered to the left of
+// the H/S indicator. Shows where the parent Budget task sits in its own
+// workflow ("to budget" → "Open for Bidding" → "Budget Set" → "Bid List
+// Confirmed"). On rollup rows (portfolio matrix) it shows the most-advanced
+// status seen across that trade's project columns.
+// ----------------------------------------------------------------------------
+
+function BudgetStatusDot({ status }: { status: BudgetStatusCode | null }) {
+  if (!status) {
+    return (
+      <span
+        className="bs-dot"
+        style={{ background: 'transparent', border: '1px dashed var(--color-border-secondary)' }}
+        title="Budget status — not set"
+      />
+    );
+  }
+  const isConfirmed = status === 'BC';
+  const style: CSSProperties = {
+    background: BUDGET_STATUS_COLOR[status],
+  };
+  if (isConfirmed) {
+    style.boxShadow = '0 0 0 1.5px var(--color-background-secondary), 0 0 0 2.5px #30a46c';
+  }
+  return (
+    <span className="bs-dot" style={style} title={`Budget status — ${BUDGET_STATUS_LABEL[status]}`} />
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Leveling panel (Gap 6)
+// ----------------------------------------------------------------------------
+
+function LevelingPanel({ entries }: { entries: LevelingEntry[] }) {
+  return (
+    <>
+      <div className="h">
+        <Icon name="balance" /> In leveling
+        <span className="meta">{entries.length} trade{entries.length === 1 ? '' : 's'} · Luis Núñez owns the comparison sheet</span>
+      </div>
+      <div className="perm-list">
+        {entries.length === 0 ? (
+          <div style={{ color: 'var(--color-text-tertiary)', fontSize: 12, padding: 10 }}>
+            No trades in leveling right now.
+          </div>
+        ) : entries.map((e) => (
+          <a
+            key={`${e.projectFolderId}-${e.trade}`}
+            href={e.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`row${e.pendingReview ? ' critical' : ''}`}
+            title={`Open ${e.trade} bidding list (new tab)`}
+          >
+            <div className="when">
+              <div className="d">{e.daysSinceFirstBid ?? '?'}</div>
+              <div className="mo">days</div>
+            </div>
+            <div className="info">
+              <div className="trade">{e.trade}<span className="ext-icon" aria-hidden>↗</span></div>
+              <div className="name">{e.subCount} sub{e.subCount === 1 ? '' : 's'} leveled</div>
+              <div className="proj">{e.project}</div>
+            </div>
+            <span className="countdown">{e.pendingReview ? 'pending review' : 'leveling'}</span>
+          </a>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Subcontractors view (Gap 8)
+// ----------------------------------------------------------------------------
+
+function SubcontractorsView({ subs, listUrl }: { subs: SubcontractorStats[]; listUrl: string }) {
+  return (
+    <div className="subs-card">
+      <div className="h">
+        <Icon name="users" /> Subcontractors
+        <span className="meta">
+          {subs.length} subs · sorted by active RFPs · {' '}
+          <a href={listUrl} target="_blank" rel="noopener noreferrer">Open master list ↗</a>
+        </span>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="subs-table">
+          <thead>
+            <tr>
+              <th>Subcontractor</th>
+              <th>Trades</th>
+              <th className="r">Active RFPs</th>
+              <th className="r">Total bids</th>
+              <th className="r">Awarded</th>
+              <th className="r">Win rate</th>
+              <th className="r">Avg bid</th>
+              <th className="r">Median response</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subs.map((s) => (
+              <tr key={s.name}>
+                <td>
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="ext">
+                    {s.name}<span className="ext-icon" aria-hidden>↗</span>
+                  </a>
+                </td>
+                <td className="trades-cell" title={s.trades.join(', ')}>
+                  {s.trades.length === 0 ? '—' : s.trades.slice(0, 3).join(', ') + (s.trades.length > 3 ? ` +${s.trades.length - 3}` : '')}
+                </td>
+                <td className="r">{s.activeRfps}</td>
+                <td className="r">{s.totalBids}</td>
+                <td className="r">{s.awardedCount}</td>
+                <td className="r">{s.winRatePct}%</td>
+                <td className="r">{s.avgBidAmount == null ? '—' : fmtShort(s.avgBidAmount)}</td>
+                <td className="r">{s.medianResponseDays == null ? '—' : `${s.medianResponseDays}d`}</td>
+              </tr>
+            ))}
+            {subs.length === 0 ? (
+              <tr><td colSpan={8} style={{ padding: 16, color: 'var(--color-text-tertiary)', fontSize: 12 }}>No subcontractor activity yet.</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Sync issues side panel (Gap 7)
+// ----------------------------------------------------------------------------
+
+function SyncIssuesPanel({ rows, onClose }: { rows: SyncIssueRow[]; onClose: () => void }) {
+  const grouped = useMemo(() => {
+    const byCat = new Map<string, SyncIssueRow[]>();
+    for (const r of rows) {
+      const arr = byCat.get(r.categoryLabel) ?? [];
+      arr.push(r);
+      byCat.set(r.categoryLabel, arr);
+    }
+    return Array.from(byCat.entries());
+  }, [rows]);
+  return (
+    <div className="side-panel-overlay" onClick={onClose} role="dialog" aria-modal="true">
+      <div className="side-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="side-panel-h">
+          <div>
+            <h2>Sync issues</h2>
+            <p>{rows.length} across {new Set(rows.map((r) => r.projectFolderId)).size} project{new Set(rows.map((r) => r.projectFolderId)).size === 1 ? '' : 's'}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="side-panel-body">
+          {grouped.length === 0 ? (
+            <p style={{ color: 'var(--color-text-tertiary)', fontSize: 13 }}>No sync issues 🎉</p>
+          ) : grouped.map(([label, list]) => (
+            <section key={label}>
+              <h3>{label} <span className="n">{list.length}</span></h3>
+              <ul>
+                {list.map((r, i) => (
+                  <li key={`${r.code}-${r.projectFolderId}-${r.trade ?? ''}-${i}`}>
+                    <div className="proj">{r.project}{r.trade ? <> · <span className="trade">{r.trade}</span></> : null}</div>
+                    <div className="msg">{r.message}</div>
+                    <a href={r.fixUrl} target="_blank" rel="noopener noreferrer" className="fix">Fix in ClickUp ↗</a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
 // Helpers
 // ----------------------------------------------------------------------------
 
@@ -938,4 +1311,7 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   'external-link': (<><path d="M14 4h6v6" /><path d="M20 4 10 14" /><path d="M20 14v6H4V4h6" /></>),
   'list-check': (<><path d="M4 6h13M4 12h13M4 18h13" /><path d="M19 5l1.5 1.5L23 4" /><path d="M19 11l1.5 1.5L23 10" /><path d="M19 17l1.5 1.5L23 16" /></>),
   table: (<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M9 4v16M15 4v16" /></>),
+  users: (<><circle cx="9" cy="8" r="3.5" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17" cy="9" r="2.5" /><path d="M21 19c0-2.5-2-4.5-4.5-4.5" /></>),
+  balance: (<><path d="M12 3v18" /><path d="M5 21h14" /><path d="M6 8l-3 6h6z" /><path d="M18 8l-3 6h6z" /><path d="M3 8h18" /></>),
+  paperclip: (<><path d="M21 12.79l-9.19 9.19a5 5 0 1 1-7.07-7.07L13.5 6.16a3.5 3.5 0 0 1 4.95 4.95L9.99 19.58a2 2 0 1 1-2.83-2.83l8.05-8.05" /></>),
 };
