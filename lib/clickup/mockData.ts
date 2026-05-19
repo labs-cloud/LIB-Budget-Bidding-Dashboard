@@ -127,6 +127,9 @@ function makeMockSnapshot(project: MockProject, grid: MockBidRow[]): ProjectSnap
       tradeType: isSetExample ? 'Set' : isPendingExample ? 'Pending' : 'Biddable',
       costType: costTypeForTrade(row.trade),
       budgetAllocated: missingBudgetExample ? null : row.budget,
+      // Mock Estimated Budget — a touch above allocated so the three-number
+      // Budget Outlook progression is visible in mock mode.
+      estimatedBudget: missingBudgetExample ? null : Math.round(row.budget * 1.08),
       updatedBudget: null,
       subcontractors,
       budgetStatus: isSetExample ? 'Budget Set' : 'Open for Bidding',

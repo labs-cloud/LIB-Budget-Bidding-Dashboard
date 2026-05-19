@@ -66,6 +66,14 @@ export const STATUS_PILL: Record<
 //   - "Leveled — Pending Review" uses an em-dash in some folders and a
 //     hyphen-space-hyphen in others; both must collapse to the canonical
 //     "Leveled - Pending Review".
+//
+// There is a second layer: the team's SharePoint "Budget Outlook" xlsx uses
+// informal status words (`sent`, `received`, `hold`, `finalized`,
+// `Followed 4/21`). When that vocab is typed straight into ClickUp's Bidding
+// Status field instead of the canonical 9-stage dropdown, the normalizer
+// still resolves it. `Followed <any date>` is handled by a regex since the
+// trailing date varies.
+//
 // Unknown values return null and log to console.warn so we catch drift.
 const BIDDING_ALIASES: Record<string, BiddingStatus> = (() => {
   const map: Record<string, BiddingStatus> = {};
@@ -79,6 +87,13 @@ const BIDDING_ALIASES: Record<string, BiddingStatus> = (() => {
   // listing them here documents the live values we've seen).
   add('Leveled — Pending Review', 'Leveled - Pending Review');
   add('Leveled – Pending Review', 'Leveled - Pending Review');
+  // Informal Excel "Budget Outlook" vocabulary.
+  add('sent', 'RFP Sent');
+  add('received', 'Bid Received');
+  add('finalized', 'Awarded');
+  add('hold', 'Needs Rebid');
+  add('followed', 'Followed Up');
+  add('followed up', 'Followed Up');
   return map;
 })();
 
@@ -90,11 +105,16 @@ function normalizeKey(s: string): string {
     .toLowerCase();
 }
 
+// "Followed 4/21", "Followed up 04-21-2026", "followed 4/21/26" → Followed Up.
+const FOLLOWED_DATE_RE = /^followed(?:\s+up)?\s+[\d/.\-]+$/;
+
 export function normalizeBiddingStatus(s: string | undefined | null): BiddingStatus | null {
   if (!s) return null;
   const key = normalizeKey(s);
   const hit = BIDDING_ALIASES[key];
   if (hit) return hit;
+  // Informal "Followed <date>" — the date suffix varies, so match by shape.
+  if (FOLLOWED_DATE_RE.test(key)) return 'Followed Up';
   // Surface drift instead of silently returning null.
   console.warn(`[normalizeBiddingStatus] unknown bidding status: ${JSON.stringify(s)}`);
   return null;
@@ -222,6 +242,7 @@ export const BUDGET_FIELDS = {
   TradeType: '2. Trade Type',
   CostType: 'Cost Type',
   BudgetAllocated: '💲 Budget Allocated',
+  EstimatedBudget: 'Estimated Budget',
   UpdatedBudget: 'Updated Budget',
   Subcontractors: '1. Subcontractors',
   StartBiddingDate: 'Start Bidding Date',
@@ -287,7 +308,14 @@ export interface BudgetTask {
   trade: string;
   tradeType: TradeTypeValue | null;
   costType: TradeCostType;
+  /** "💲 Budget Allocated" CU field — the original approved estimate. */
   budgetAllocated: number | null;
+  /**
+   * "Estimated Budget" CU field — the team's planning number, mirrors the
+   * Excel "Budget Outlook" Estimated column. `null` = unknown estimate;
+   * `0` = a genuine $0 line item (e.g. DOT Meeting).
+   */
+  estimatedBudget: number | null;
   updatedBudget: number | null;
   subcontractors: string[];
   budgetStatus: string;

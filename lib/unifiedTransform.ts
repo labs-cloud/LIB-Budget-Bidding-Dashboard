@@ -18,6 +18,7 @@ import { tradeKey } from './clickup/client';
 import { computeUpdatedBudgets, resolveWinningBid } from './clickup/budgetAutomation';
 import { MOCK_PROJECTS } from './clickup/mockData';
 import { fmtUsd, daysSince } from './formatting';
+import { finalizedLowestBid, newBudget as deriveNewBudget } from './derivations/budget';
 
 // ClickUp workspace ID (constant — verified in AGENTS.md §3). Used to
 // construct folder URLs; task URLs we always read from the API response.
@@ -113,6 +114,8 @@ export interface UnifiedPortfolio {
   syncIssueRows: SyncIssueRow[];
   subcontractors: SubcontractorStats[];
   subcontractorsListUrl: string;
+  /** Budget Outlook three-number rollup, summed across every project. */
+  budgetOutlook: { estimated: string; finalized: string; newBudget: string };
   gantt: Array<{
     cost: CostType;
     label: 'Soft Cost' | 'Hard Cost';
@@ -156,6 +159,10 @@ export interface UnifiedProject {
     bidding: number;
     set: number;
     updatedBudget: string;
+    /** Budget Outlook three-number rollup, summed across the project's trades. */
+    estimatedTotal: string;
+    finalizedTotal: string;
+    newBudgetTotal: string;
     syncIssues: number;
   };
   rollup: {
@@ -264,6 +271,10 @@ export interface PtTrade {
   actualBiddingCount: number;
   updated: number;
   allocated: number;
+  /** "Budget Outlook" three-number progression (Gap: Excel parity). */
+  estimated: number | null;
+  finalizedLowest: number | null;
+  newBudget: number | null;
   subs: (PtSub | null)[];
   /** ClickUp URL for the budget task (the trade row). */
   url: string;
@@ -596,6 +607,20 @@ export function buildUnifiedPortfolio(input: {
   // portfolio.
   const subcontractors = buildSubcontractorStats(snapshots);
 
+  // Budget Outlook portfolio rollup — Estimated / Finalized / New Budget
+  // summed across every Budget task in every project.
+  let pfEstimated = 0;
+  let pfFinalized = 0;
+  let pfNewBudget = 0;
+  for (const s of snapshots) {
+    for (const b of s.budgetTasks) {
+      pfEstimated += b.estimatedBudget ?? 0;
+      const fin = finalizedLowestBid(b, s.biddingTasks);
+      pfFinalized += fin ?? 0;
+      pfNewBudget += deriveNewBudget(b, fin) ?? 0;
+    }
+  }
+
   // Hero refresh string.
   const sec = Math.max(1, Math.floor((Date.now() - refreshedAt) / 1000));
   const refreshedAgo = sec < 90 ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`;
@@ -619,6 +644,11 @@ export function buildUnifiedPortfolio(input: {
     syncIssueRows,
     subcontractors,
     subcontractorsListUrl: clickupListUrl(CLICKUP_SUBCONTRACTORS_LIST_ID),
+    budgetOutlook: {
+      estimated: fmtUsd(pfEstimated),
+      finalized: fmtUsd(pfFinalized),
+      newBudget: fmtUsd(pfNewBudget),
+    },
     gantt,
     ganttAxis,
     projects: projectTransforms,
@@ -933,6 +963,9 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
       const padded: (BiddingTask | null)[] = [subsSorted[0] ?? null, subsSorted[1] ?? null, subsSorted[2] ?? null, subsSorted[3] ?? null];
       const updated = computedById.get(bt.id)?.nextUpdated ?? bt.updatedBudget ?? bt.budgetAllocated ?? 0;
       const allocated = bt.budgetAllocated ?? 0;
+      // Budget Outlook three-number progression.
+      const finalizedLowest = finalizedLowestBid(bt, snapshot.biddingTasks);
+      const newBudgetVal = deriveNewBudget(bt, finalizedLowest);
       const stage = stageLabelFor(bt, bids);
 
       const subs: (PtSub | null)[] = padded.map((b) => {
@@ -960,12 +993,27 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
         actualBiddingCount: bt.actualBiddingCount,
         updated,
         allocated,
+        estimated: bt.estimatedBudget,
+        finalizedLowest,
+        newBudget: newBudgetVal,
         subs,
         url: bt.url,
         budgetStatus: budgetStatusCodeFromString(bt.budgetStatus),
         tradeType: bt.tradeType,
       } satisfies PtTrade;
     });
+
+  // Budget Outlook project totals — summed across every trade. `null`
+  // estimates contribute nothing (unknown ≠ zero).
+  const estimatedTotal = snapshot.budgetTasks.reduce((sum, b) => sum + (b.estimatedBudget ?? 0), 0);
+  const finalizedTotal = snapshot.budgetTasks.reduce(
+    (sum, b) => sum + (finalizedLowestBid(b, snapshot.biddingTasks) ?? 0),
+    0
+  );
+  const newBudgetTotal = snapshot.budgetTasks.reduce((sum, b) => {
+    const fin = finalizedLowestBid(b, snapshot.biddingTasks);
+    return sum + (deriveNewBudget(b, fin) ?? 0);
+  }, 0);
 
   // Project meta — pull what we can from the snapshot.
   const meta = projectMetaFor(snapshot);
@@ -981,6 +1029,9 @@ function transformProject(snapshot: ProjectSnapshot): UnifiedProject {
     summary: {
       trades, awarded: awardedCount, bidding: biddingCount, set: setCount,
       updatedBudget: fmtUsd(updatedTotal),
+      estimatedTotal: fmtUsd(estimatedTotal),
+      finalizedTotal: fmtUsd(finalizedTotal),
+      newBudgetTotal: fmtUsd(newBudgetTotal),
       syncIssues: snapshot.syncHealth.total,
     },
     rollup: {

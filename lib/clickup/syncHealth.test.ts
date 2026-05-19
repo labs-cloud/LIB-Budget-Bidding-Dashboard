@@ -10,6 +10,7 @@ function budget(partial: Partial<BudgetTask> = {}): BudgetTask {
     tradeType: 'Biddable',
     costType: 'Hard',
     budgetAllocated: 1000,
+    estimatedBudget: null,
     updatedBudget: null,
     subcontractors: ['Acme Mechanical', 'Beta Air'],
     budgetStatus: 'Open for Bidding',

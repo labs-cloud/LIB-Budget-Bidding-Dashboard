@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "migrate:estimated-budget": "npx --yes tsx scripts/add-estimated-budget-field.ts"
   },
   "dependencies": {
     "next": "14.2.5",
