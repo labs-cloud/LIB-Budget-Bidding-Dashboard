@@ -4,16 +4,21 @@
    coexists with the legacy /project/[id] page's globals.css. */
 
 .unified-app {
-  /* Base tokens */
+  /* Base tokens — warm cream/beige palette, parity with the P&P dashboard.
+     Light-mode color reference (documented for future tuning):
+       page background   #faf6f0  (warm cream)
+       panel/card-2      #f4eee2  (warmer beige)
+       card / frame      #ffffff  (white card on cream)
+       borders           warm-gray rgba(60,40,15,…) */
   --color-background-primary: #ffffff;
-  --color-background-secondary: #f7f6f3;
-  --color-background-tertiary: #ebeae5;
-  --color-text-primary: #1a1a1a;
-  --color-text-secondary: #6b6b6b;
-  --color-text-tertiary: #9a9a9a;
+  --color-background-secondary: #f4eee2;
+  --color-background-tertiary: #faf6f0;
+  --color-text-primary: #211d18;
+  --color-text-secondary: #6b6357;
+  --color-text-tertiary: #9a9184;
   --color-text-info: #185fa5;
-  --color-border-tertiary: rgba(0, 0, 0, 0.08);
-  --color-border-secondary: rgba(0, 0, 0, 0.15);
+  --color-border-tertiary: rgba(60, 40, 15, 0.09);
+  --color-border-secondary: rgba(60, 40, 15, 0.18);
   --border-radius-md: 8px;
   --border-radius-lg: 12px;
 
@@ -833,3 +838,110 @@ html[data-theme='dark'] .unified-app table.per-trade tbody tr.trade-row:hover td
   60%  { background: rgba(0,145,255,0.10); }
   100% { background: transparent; }
 }
+
+/* ============================================================
+   PR-B — P&P visual parity surfaces
+   ============================================================ */
+
+/* Header — ClickUp source path subtitle */
+.unified-app .lib-hero .source-path {
+  font-size: 11px; color: var(--color-text-tertiary);
+  margin-top: 3px; font-variant-numeric: tabular-nums;
+}
+
+/* Priority hero card */
+.unified-app .priority-hero {
+  background: #231f20; color: #f1efe8;
+  border-radius: var(--border-radius-lg);
+  border-top: 3px solid var(--lib-orange);
+  padding: 15px 20px; margin-bottom: 14px;
+}
+.unified-app .priority-hero.calm { background: #20302a; border-top-color: #30a46c; }
+.unified-app .priority-hero .ph-label {
+  font-size: 10px; letter-spacing: 0.12em; font-weight: 600;
+  color: var(--lib-orange); display: inline-flex; align-items: center; gap: 5px;
+}
+.unified-app .priority-hero.calm .ph-label { color: #6cdd9e; }
+.unified-app .priority-hero .ph-headline { font-size: 16px; font-weight: 500; margin: 6px 0 0; }
+.unified-app .priority-hero .ph-list { display: flex; flex-direction: column; gap: 4px; margin-top: 11px; }
+.unified-app .priority-hero .ph-row {
+  display: grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: center;
+  padding: 7px 10px; border-radius: 7px;
+  background: rgba(255,255,255,0.05); color: inherit; text-decoration: none;
+}
+.unified-app .priority-hero .ph-row:hover { background: rgba(255,255,255,0.11); }
+.unified-app .priority-hero .ph-days {
+  background: var(--lib-orange); color: #231f20; font-weight: 700;
+  font-size: 12px; text-align: center; padding: 3px 0; border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.unified-app .priority-hero .ph-info { font-size: 13px; color: #d9d5cc; }
+.unified-app .priority-hero .ph-info b { font-weight: 600; color: #f1efe8; }
+.unified-app .priority-hero .ph-status { font-size: 11px; color: #a8a499; white-space: nowrap; }
+
+/* Team workload */
+.unified-app .workload-card { margin-bottom: 14px; }
+.unified-app .workload { display: flex; flex-direction: column; gap: 10px; }
+.unified-app .wl-row { display: grid; grid-template-columns: 30px 1fr 44px; gap: 12px; align-items: center; }
+.unified-app .wl-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--bb-fu-bg); color: var(--bb-fu-fg);
+  font-size: 10px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.unified-app .wl-name { font-size: 12px; font-weight: 500; }
+.unified-app .wl-bar { display: flex; gap: 2px; height: 18px; margin: 3px 0; }
+.unified-app .wl-seg {
+  font-size: 9px; color: #fff; font-weight: 600;
+  display: inline-flex; align-items: center; padding: 0 5px;
+  border-radius: 3px; white-space: nowrap; overflow: hidden; min-width: 30px;
+}
+.unified-app .wl-empty { font-size: 11px; color: var(--color-text-tertiary); font-style: italic; }
+.unified-app .wl-sub { font-size: 10px; color: var(--color-text-tertiary); }
+.unified-app .wl-total { font-size: 15px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Active by status */
+.unified-app .abs-card { margin-bottom: 14px; }
+.unified-app .abs-list { display: flex; flex-direction: column; gap: 9px; }
+.unified-app .abs-row { display: grid; grid-template-columns: 10px 160px 1fr 46px; gap: 10px; align-items: center; }
+.unified-app .abs-dot { width: 9px; height: 9px; border-radius: 50%; }
+.unified-app .abs-label { font-size: 10px; letter-spacing: 0.05em; color: var(--color-text-secondary); }
+.unified-app .abs-bar { height: 8px; background: var(--color-background-tertiary); border-radius: 999px; overflow: hidden; }
+.unified-app .abs-bar > span { display: block; height: 100%; border-radius: 999px; }
+.unified-app .abs-count { text-align: right; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* Portfolio at a glance */
+.unified-app .glance-card { margin-top: 14px; }
+.unified-app .glance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 8px; }
+.unified-app .glance-tile {
+  display: block; padding: 10px 12px;
+  border-radius: var(--border-radius-md);
+  border: 0.5px solid var(--color-border-tertiary);
+  border-left: 3px solid var(--color-border-secondary);
+  background: var(--color-background-primary);
+  color: var(--color-text-primary); text-decoration: none;
+  transition: transform .08s, box-shadow .12s;
+}
+.unified-app .glance-tile:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+.unified-app .glance-tile.good { border-left-color: var(--good-strong); }
+.unified-app .glance-tile.mid { border-left-color: var(--warn-strong); }
+.unified-app .glance-tile .gt-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.unified-app .glance-tile .gt-name { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unified-app .glance-tile .gt-pct { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.unified-app .glance-tile.good .gt-pct { color: var(--good-strong); }
+.unified-app .glance-tile.mid .gt-pct { color: var(--warn-strong); }
+.unified-app .glance-tile.low .gt-pct { color: var(--color-text-tertiary); }
+.unified-app .glance-tile .gt-sub { font-size: 10px; color: var(--color-text-tertiary); margin-top: 3px; font-variant-numeric: tabular-nums; }
+
+/* Matrix cell polish — dim placeholder pill + cost-type stripe */
+.unified-app .dim-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 32px; height: 22px; border-radius: 999px;
+  background: var(--color-background-tertiary);
+  color: var(--color-text-tertiary); font-size: 10px;
+}
+.unified-app table.matrix tbody td.cost-stripe::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+}
+.unified-app table.matrix tbody td.cost-stripe.hard::before { background: #d85a30; }
+.unified-app table.matrix tbody td.cost-stripe.soft::before { background: #ffc53d; }

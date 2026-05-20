@@ -461,6 +461,9 @@ export function shapeBiddingTask(
     awardDate,
     followedUp: readDateField(task, BIDDING_FIELDS.FollowedUp),
     link: readTextField(task, BIDDING_FIELDS.Link),
+    assignees: (task.assignees ?? [])
+      .map((a) => (a.username ?? a.email ?? '').trim())
+      .filter((s): s is string => s.length > 0),
     projectFolder: folderName,
     projectFolderId: folderId,
     listId: task.list?.id ?? '',

@@ -4,13 +4,16 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import '@/styles/unified.css';
 import type {
   BudgetStatusCode,
+  BudgetStatusPanelRow,
   GanttRow,
+  GlanceTile,
   LevelingEntry,
   PtSub,
   PtTrade,
   StatusCode,
   SubcontractorStats,
   SyncIssueRow,
+  TeamWorkloadRow,
   UnifiedPortfolio,
   UnifiedProject,
 } from '@/lib/unifiedTransform';
@@ -273,6 +276,7 @@ function Hero({
           <span className={`mode-chip ${mode}`}>B&amp;B · {mode === 'bidding' ? 'Bidding' : 'Budget'}</span>
         </h1>
         <div className="meta">{meta}</div>
+        <div className="source-path">{data.sourcePath}</div>
       </div>
       <div className="lib-hero-right">
         <div className="dash-toggle" role="tablist" aria-label="Dashboard view">
@@ -326,6 +330,7 @@ function PortfolioShell({
     : `across ${data.hero.activeProjects} projects`;
   return (
     <>
+      <PriorityHero priority={data.priority} />
       <div className="kpis">
         <div className="kpi info"><div className="l">Bids in flight</div><div className="v">{k.inFlight}</div><div className="s">{k.inFlightDelta}</div></div>
         <div className="kpi warn"><div className="l">Awaiting follow-up</div><div className="v">{k.awaitingFollowUp}</div><div className="s">{k.awaitingStale} stale &gt;7d</div></div>
@@ -362,11 +367,19 @@ function PortfolioShell({
         <div className="bt-tile primary"><div className="bt-v">{data.budgetOutlook.newBudget}</div><div className="bt-l">New Budget <span className="bt-cap">· {tradeCaption}</span></div></div>
       </div>
 
+      <TeamWorkload rows={data.teamWorkload} />
+
+      {/* "Active by status" — Budget-task workflow distribution. Budget view
+          only; Bidding view focuses on RFP statuses, not Budget statuses. */}
+      {!bidding ? <ActiveByStatus rows={data.budgetStatusPanel} /> : null}
+
       {view === 'pf-matrix'
         ? <PortfolioMatrix data={data} filterStatus={filterStatus} filterTradeType={filterTradeType} filterCost={filterCost} />
         : view === 'pf-gantt'
           ? <PortfolioGantt data={data} />
           : <SubcontractorsView subs={data.subcontractors} listUrl={data.subcontractorsListUrl} />}
+
+      <AtAGlance tiles={data.atAGlance} bidding={bidding} />
     </>
   );
 }
@@ -433,7 +446,7 @@ function PortfolioMatrix({
             <tbody>
               {filteredRows.map((r) => (
                 <tr key={r.trade}>
-                  <td className="trade-name" title={r.trade}>
+                  <td className={`trade-name cost-stripe ${r.cost}`} title={r.trade}>
                     <BudgetStatusDot status={r.budgetStatus} />
                     <span className={`ctag ${r.cost}`}>{r.cost === 'hard' ? 'H' : 'S'}</span>
                     <a
@@ -468,12 +481,18 @@ function PortfolioMatrix({
                     if (!cell.code) {
                       return (
                         <td key={ci}>
-                          <span
-                            className={cell.syncIssues > 0 ? 'sync-cell-warn' : ''}
-                            title={cell.syncIssues > 0 ? `${cell.syncIssues} Budget→Bidding sync issue${cell.syncIssues === 1 ? '' : 's'}` : undefined}
-                          >
-                            —
-                          </span>
+                          {cell.syncIssues > 0 ? (
+                            <span
+                              className="sync-cell-warn"
+                              title={`${cell.syncIssues} Budget→Bidding sync issue${cell.syncIssues === 1 ? '' : 's'}`}
+                            >
+                              {cell.syncIssues}
+                            </span>
+                          ) : (
+                            // Dim placeholder pill — gives the empty cell a
+                            // visible boundary instead of dead whitespace.
+                            <span className="dim-pill" aria-hidden>—</span>
+                          )}
                         </td>
                       );
                     }
@@ -1353,6 +1372,127 @@ function SyncIssuesPanel({ rows, onClose }: { rows: SyncIssueRow[]; onClose: () 
             </section>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// P&P-parity surfaces (PR-B)
+// ----------------------------------------------------------------------------
+
+function PriorityHero({ priority }: { priority: UnifiedPortfolio['priority'] }) {
+  const empty = priority.items.length === 0;
+  return (
+    <div className={`priority-hero${empty ? ' calm' : ''}`}>
+      <div className="ph-label"><Icon name="clock-exclamation" size={13} /> PRIORITY · top of the queue</div>
+      <div className="ph-headline">{priority.headline}</div>
+      {empty ? null : (
+        <div className="ph-list">
+          {priority.items.map((it, i) => (
+            <a
+              key={`${it.url}-${i}`}
+              href={it.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ph-row"
+              title={`Open ${it.trade} bid in ClickUp (new tab)`}
+            >
+              <span className="ph-days">{it.days}d</span>
+              <span className="ph-info"><b>{it.project}</b> · {it.trade}</span>
+              <span className="ph-status">{it.status}<span className="ext-icon" aria-hidden>↗</span></span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TeamWorkload({ rows }: { rows: TeamWorkloadRow[] }) {
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  return (
+    <div className="panel-card workload-card">
+      <div className="h">
+        <Icon name="users" /> Bidding Team workload
+        <span className="meta">biddable trades · SOP §2 team</span>
+      </div>
+      <div className="workload">
+        {rows.map((r) => (
+          <div key={r.name} className="wl-row">
+            <span className="wl-avatar">{r.initials}</span>
+            <div className="wl-main">
+              <div className="wl-name">{r.name}</div>
+              <div className="wl-bar">
+                {r.total === 0 ? (
+                  <span className="wl-empty">no assigned bids</span>
+                ) : r.segments.map((s) => (
+                  <span
+                    key={s.code}
+                    className="wl-seg"
+                    style={{ width: `${(s.n / max) * 100}%`, background: STATUS_COLORS[s.code] }}
+                    title={`${s.n} ${STATUS_NAMES[s.code]}`}
+                  >
+                    {s.n} {s.code}
+                  </span>
+                ))}
+              </div>
+              <div className="wl-sub">{r.projectCount} project{r.projectCount === 1 ? '' : 's'}</div>
+            </div>
+            <span className="wl-total">{r.total}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActiveByStatus({ rows }: { rows: BudgetStatusPanelRow[] }) {
+  const total = Math.max(1, rows.reduce((s, r) => s + r.count, 0));
+  return (
+    <div className="panel-card abs-card">
+      <div className="h">
+        <Icon name="chart-pie" /> Active by status
+        <span className="meta">Budget tasks across the portfolio</span>
+      </div>
+      <div className="abs-list">
+        {rows.map((r) => (
+          <div key={r.code} className="abs-row">
+            <span className="abs-dot" style={{ background: BUDGET_STATUS_COLOR[r.code] }} />
+            <span className="abs-label">{r.label.toUpperCase()}</span>
+            <span className="abs-bar">
+              <span style={{ width: `${(r.count / total) * 100}%`, background: BUDGET_STATUS_COLOR[r.code] }} />
+            </span>
+            <span className="abs-count">{r.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AtAGlance({ tiles, bidding }: { tiles: GlanceTile[]; bidding: boolean }) {
+  return (
+    <div className="panel-card glance-card">
+      <div className="h">
+        <Icon name="grid-dots" /> Portfolio at a glance
+        <span className="meta">{tiles.length} projects · % biddable trades awarded</span>
+      </div>
+      <div className="glance-grid">
+        {tiles.map((t) => (
+          <a
+            key={t.folderId}
+            href={`/project/${encodeURIComponent(t.folderId)}?view=${bidding ? 'bidding' : 'budget'}`}
+            className={`glance-tile ${t.health}`}
+            title={`Open ${t.name}`}
+          >
+            <div className="gt-top">
+              <span className="gt-name">{t.name}</span>
+              <span className="gt-pct">{t.awardedPct}%</span>
+            </div>
+            <div className="gt-sub">{t.estimated} Est · {t.biddableCount} biddable</div>
+          </a>
+        ))}
       </div>
     </div>
   );
