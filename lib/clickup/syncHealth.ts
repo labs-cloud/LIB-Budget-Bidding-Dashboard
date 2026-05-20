@@ -130,6 +130,31 @@ export function analyzeBudgetTaskSync(
         );
       }
     }
+
+    // Wave 2 backfill set Trade Type = Biddable on trades whose Subcontractors
+    // list was never populated, so the Make scenario iterated over an empty
+    // list and generated nothing. Surface that explicitly.
+    if (budgetTask.subcontractors.length === 0) {
+      addIssue(
+        issues,
+        'biddable_no_subcontractors',
+        'warning',
+        'biddable_no_subcontractors',
+        'Trade Type is Biddable but no Subcontractors are assigned — Bidding tasks cannot be generated.'
+      );
+    }
+
+    // Biddable trade that has Bidding tasks but no Bid/Contracted Amount on
+    // any of them — the RFPs went out but nothing has come back as a number.
+    if (actualBiddingCount > 0 && bidsForTrade.every((bid) => bid.bidAmount == null)) {
+      addIssue(
+        issues,
+        'biddable_no_bid_amount',
+        'warning',
+        'biddable_no_bid_amount',
+        'Trade Type is Biddable and Bidding tasks exist, but none carry a Bid/Contracted Amount yet.'
+      );
+    }
   }
 
   if (budgetTask.tradeType === 'Set' && actualBiddingCount > 0) {

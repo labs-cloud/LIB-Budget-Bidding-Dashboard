@@ -64,11 +64,14 @@ function snapshot(budgetTasks: BudgetTask[], biddingTasks: BiddingTask[]): Proje
 }
 
 describe('analyzeProjectSync', () => {
-  it('passes a Biddable trade with selected subcontractors and matching generated bids', () => {
+  it('passes a Biddable trade with selected subcontractors and matching priced bids', () => {
     const analyzed = analyzeProjectSync(
       snapshot(
         [budget()],
-        [bid({ subcontractor: 'Acme Mechanical' }), bid({ id: 'b2', subcontractor: 'Beta Air' })]
+        [
+          bid({ subcontractor: 'Acme Mechanical', bidAmount: 1000 }),
+          bid({ id: 'b2', subcontractor: 'Beta Air', bidAmount: 1200 }),
+        ]
       )
     );
 
@@ -78,12 +81,21 @@ describe('analyzeProjectSync', () => {
     expect(analyzed.syncHealth.total).toBe(0);
   });
 
-  it('does not treat pre-bidding missing subcontractors as a sync issue', () => {
+  it('flags a Biddable trade with no Subcontractors assigned (Wave 2 backfill gap)', () => {
     const analyzed = analyzeProjectSync(snapshot([budget({ subcontractors: [] })], []));
 
-    expect(analyzed.budgetTasks[0].syncStatus).toBe('ok');
-    expect(analyzed.budgetTasks[0].syncIssues).toHaveLength(0);
+    expect(analyzed.budgetTasks[0].syncStatus).toBe('warn');
+    expect(analyzed.budgetTasks[0].syncIssues.map((i) => i.code)).toContain('biddable_no_subcontractors');
+    expect(analyzed.syncHealth.byCategory.biddable_no_subcontractors).toBe(1);
     expect(analyzed.budgetTasks[0].expectedBiddingCount).toBe(0);
+  });
+
+  it('flags a Biddable trade whose bids carry no Bid/Contracted Amount', () => {
+    const analyzed = analyzeProjectSync(
+      snapshot([budget()], [bid({ subcontractor: 'Acme Mechanical', bidAmount: null })])
+    );
+
+    expect(analyzed.budgetTasks[0].syncIssues.map((i) => i.code)).toContain('biddable_no_bid_amount');
   });
 
   it('warns when selected subcontractors are missing generated Bidding tasks', () => {

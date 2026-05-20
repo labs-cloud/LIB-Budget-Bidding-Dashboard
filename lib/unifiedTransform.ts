@@ -398,6 +398,8 @@ const SYNC_CATEGORY_LABEL: Record<SyncCategory, string> = {
   budget_status: 'Budget status mismatch',
   unexpected_bidding: 'Bidding on a Set trade',
   unlinked_bid: 'Bid not linked to a Trade',
+  biddable_no_subcontractors: 'Biddable trade with no Subcontractors assigned',
+  biddable_no_bid_amount: 'Biddable trade with no Bid Amount',
 };
 
 function median(values: number[]): number | null {
