@@ -168,9 +168,12 @@ export function UnifiedDashboard({ data, embed = false, initialProjectId = null,
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as BiddingStatus | 'all')}
             >
-              {/* Gap 1: 9 canonical Bidding statuses from the SOP. */}
+              {/* All 9 canonical Bidding statuses, sourced from the
+                  BIDDING_STATUSES enum so every status appears regardless of
+                  how many tasks currently sit in it. Value stays canonical;
+                  the label is upper-cased for display. */}
               <option value="all">All bidding statuses</option>
-              {BIDDING_STATUSES.map((s) => (<option key={s} value={s}>{s}</option>))}
+              {BIDDING_STATUSES.map((s) => (<option key={s} value={s}>{s.toUpperCase()}</option>))}
             </select>
             <select
               value={filterTradeType}
@@ -250,7 +253,7 @@ function Hero({
   const title = inProject && project ? project.folderName : `${mode === 'bidding' ? 'Bidding' : 'Budget'} Dashboard`;
   const activeCount = data.hero.activeProjects;
   const meta = inProject && project
-    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding{mode === 'budget' ? <> · {project.summary.set} set · {project.summary.syncIssues} sync issues</> : null} · Updated budget {project.summary.updatedBudget}</>
+    ? <><b>{project.summary.trades} trades</b> · {project.summary.awarded} awarded · {project.summary.bidding} bidding{mode === 'budget' ? <> · {project.summary.set} set · {project.summary.syncIssues} sync issues</> : null}</>
     : <><b>{activeCount} of {activeCount} active projects</b> · {data.source === 'live' ? 'live from ClickUp' : 'mock data'} · refreshed {data.refreshedAgo}</>;
 
   // Budget/Bidding toggle navigates with ?view=, preserving the project route
@@ -316,11 +319,11 @@ function PortfolioShell({
 }) {
   const k = data.kpis;
   const bidding = data.view === 'bidding';
-  // Trade-count caption adapts: "56 trades" in Budget view, "24 biddable
-  // trades" in Bidding view.
+  // Portfolio tile caption — projects are the unit users think in at the
+  // portfolio scope (the per-project tiles keep the trade count).
   const tradeCaption = bidding
-    ? `${data.budgetOutlook.tradeCount} biddable trades`
-    : `${data.budgetOutlook.tradeCount} trades`;
+    ? `biddable trades across ${data.hero.activeProjects} projects`
+    : `across ${data.hero.activeProjects} projects`;
   return (
     <>
       <div className="kpis">
@@ -401,7 +404,7 @@ function PortfolioMatrix({
         <div className="h">
           <Icon name="grid-dots" /> Portfolio bidding matrix
           <span className="meta">
-            {filteredRows.length} trades × {data.matrix.projects.length} projects · click a project header to drill in
+            {filteredRows.length} unique trade names × {data.matrix.projects.length} projects · click a project header to drill in
           </span>
         </div>
         {setBannerVisible ? (
@@ -755,14 +758,25 @@ function ProjectTimeline({ project, mode }: { project: UnifiedProject; mode: 'bu
             {g.rows.map((r) => {
               const [pillCls, pillCode, pillName] = STATUS_PILL_FOR_TIMELINE[r.stat];
               const amountLabel = r.stat === 'set' ? 'Amount' : r.stat === 'lv' ? 'Lowest' : 'Bid';
+              // Set rows: the chip reads "Set" or "Set · {sub}" — never
+              // "Awarded · Set" (Set trades skip the bidding loop).
+              const setSub = r.sub && r.sub !== '(direct)' && r.sub.toLowerCase() !== 'pending'
+                ? r.sub
+                : null;
               const tlCardInner = (
                 <div className={`tl-card ${r.stat}`}>
                   <div className="top">
                     <span className="col-tag">{r.tag}</span>
                     <span className="name">{r.name}{r.url ? <span className="ext-icon" aria-hidden>↗</span> : null}</span>
-                    <span className={`bb-pill ${pillCls}`}>
-                      <span className="code">{pillCode}</span>{pillName}
-                    </span>
+                    {r.stat === 'set' ? (
+                      <span className="bb-pill ns">
+                        <span className="code">SET</span>{setSub ? ` · ${setSub}` : ''}
+                      </span>
+                    ) : (
+                      <span className={`bb-pill ${pillCls}`}>
+                        <span className="code">{pillCode}</span>{pillName}
+                      </span>
+                    )}
                   </div>
                   <div className="meta">
                     <span className="sub-name">{r.sub}</span>
@@ -838,20 +852,6 @@ function ProjectTimeline({ project, mode }: { project: UnifiedProject; mode: 'bu
               {project.rollup.softTrades} trades
             </span>
             <span className="who">{project.rollup.softTotal}</span>
-          </div>
-          <div className="chain-row" style={{ borderTop: '0.5px solid var(--color-border-secondary)', paddingTop: 10, marginTop: 4 }}>
-            <span className="role" style={{ fontWeight: 500, color: 'var(--color-text-primary)' }}>Updated budget</span>
-            <span className="who" style={{ color: 'var(--good-strong)', fontSize: 14 }}>{project.rollup.updated}</span>
-          </div>
-          <div className="chain-row"><span className="role">Allocated</span><span className="who">{project.rollup.allocated}</span></div>
-          <div className="chain-row">
-            <span className="role">Variance</span>
-            <span
-              className="who"
-              style={{ color: project.rollup.varianceKind === 'pos' ? 'var(--good-fg)' : project.rollup.varianceKind === 'neg' ? 'var(--danger-fg)' : 'var(--color-text-secondary)' }}
-            >
-              {project.rollup.variance}
-            </span>
           </div>
         </div>
         ) : null}
@@ -1372,7 +1372,8 @@ const STATUS_PILL_FOR_TIMELINE: Record<'aw' | 'lv' | 'rs' | 'fu' | 'br' | 'set',
   rs:  ['rs', 'RS', 'RFP Sent'],
   fu:  ['fu', 'FU', 'Followed Up'],
   br:  ['br', 'BR', 'Bid Received'],
-  set: ['aw', 'AW', 'Awarded · Set'],
+  // Set trades skip bidding entirely (SOP Part 6) — they are never "Awarded".
+  set: ['ns', 'SET', 'Set'],
 };
 
 function fmtShort(n: number | null): string {

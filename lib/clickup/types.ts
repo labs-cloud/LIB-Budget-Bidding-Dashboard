@@ -137,7 +137,9 @@ export type SyncCategory =
   | 'bidding_tasks'
   | 'budget_status'
   | 'unexpected_bidding'
-  | 'unlinked_bid';
+  | 'unlinked_bid'
+  | 'biddable_no_subcontractors'
+  | 'biddable_no_bid_amount';
 
 export interface SyncIssue {
   code: string;
