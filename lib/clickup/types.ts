@@ -273,11 +273,29 @@ export interface CUCustomField {
   value?: any;
 }
 
+// The Budget & Bidding team — SOP §2, exactly seven people. The workload
+// section and team filters source from this list, never from arbitrary
+// ClickUp assignees (which include unrelated P&P staff).
+export interface TeamMember {
+  name: string;
+  initials: string;
+}
+export const TEAM: TeamMember[] = [
+  { name: 'Isaac Adler', initials: 'IA' },
+  { name: 'Tuly Steinmetz', initials: 'TS' },
+  { name: 'Shlome Friedman', initials: 'SF' },
+  { name: 'Raizy Hollander', initials: 'RH' },
+  { name: 'Malky Teitelbaum', initials: 'MT' },
+  { name: 'Luis Núñez', initials: 'LN' },
+  { name: 'Shimon Katz', initials: 'SK' },
+];
+
 export interface CUTask {
   id: string;
   custom_id?: string | null;
   name: string;
   status: { status: string; color?: string; orderindex?: number | string };
+  assignees?: Array<{ id?: number | string; username?: string; email?: string }>;
   date_updated?: string;
   date_created?: string;
   orderindex?: string;
@@ -351,6 +369,8 @@ export interface BiddingTask {
   awardDate: string | null;
   followedUp: string | null;
   link: string | null;
+  /** ClickUp assignee display names — may be empty if the task is unassigned. */
+  assignees: string[];
   projectFolder: string;
   projectFolderId: string;
   listId: string;

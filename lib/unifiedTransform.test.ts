@@ -49,6 +49,7 @@ function bid(trade: string, folderId = 'f1'): BiddingTask {
     awardDate: null,
     followedUp: null,
     link: null,
+    assignees: [],
     projectFolder: folderId,
     projectFolderId: folderId,
     listId: `${folderId}-bidding`,

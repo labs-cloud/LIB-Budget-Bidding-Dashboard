@@ -40,6 +40,7 @@ function bid(partial: Partial<BiddingTask> = {}): BiddingTask {
     awardDate: null,
     followedUp: null,
     link: null,
+    assignees: [],
     projectFolder: 'P',
     projectFolderId: 'f1',
     listId: 'bidding-list',

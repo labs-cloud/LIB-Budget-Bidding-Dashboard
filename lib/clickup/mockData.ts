@@ -4,6 +4,7 @@ import {
   BudgetTask,
   CODE_STATUS,
   ProjectSnapshot,
+  TEAM,
   TradeBiddingGroup,
   costTypeForTrade,
 } from './types';
@@ -166,6 +167,9 @@ function makeMockSnapshot(project: MockProject, grid: MockBidRow[]): ProjectSnap
         awardDate: status === 'Awarded' ? String(Date.now() - 86_400_000 * 5) : null,
         followedUp: null,
         link: null,
+        // Round-robin the SOP team across mock bids so the workload section
+        // has data to render in mock mode.
+        assignees: [TEAM[bidIdx % TEAM.length].name],
         projectFolder: project.folderName,
         projectFolderId: project.folderId,
         listId: `${project.folderId}-bidding`,

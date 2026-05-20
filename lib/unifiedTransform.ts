@@ -12,6 +12,7 @@ import {
   STATUS_CODE,
   SyncCategory,
   SyncSeverity,
+  TEAM,
   TradeTypeValue,
 } from './clickup/types';
 import { tradeKey } from './clickup/client';
@@ -24,6 +25,7 @@ import { finalizedLowestBid, newBudget as deriveNewBudget } from './derivations/
 // construct folder URLs; task URLs we always read from the API response.
 const CLICKUP_WORKSPACE_ID = '9017603275';
 const CLICKUP_SUBCONTRACTORS_LIST_ID = '901709498953';
+const CLICKUP_ACTIVE_PROJECTS_SPACE_ID = '90173230172';
 function clickupFolderUrl(folderId: string): string {
   return `https://app.clickup.com/${CLICKUP_WORKSPACE_ID}/v/o/f/${folderId}`;
 }
@@ -122,6 +124,16 @@ export interface UnifiedPortfolio {
   subcontractorsListUrl: string;
   /** Budget Outlook three-number rollup, summed across every project. */
   budgetOutlook: { estimated: string; finalized: string; newBudget: string; tradeCount: number };
+  /** "PRIORITY · top of the queue" hero card content (P&P parity). */
+  priority: { headline: string; items: PriorityItem[] };
+  /** Per-SOP-team-member workload bars. */
+  teamWorkload: TeamWorkloadRow[];
+  /** Budget-task status distribution — "Active by status" panel (Budget view). */
+  budgetStatusPanel: BudgetStatusPanelRow[];
+  /** "Portfolio at a glance" tile grid — one tile per active project. */
+  atAGlance: GlanceTile[];
+  /** ClickUp source path subtitle for the header. */
+  sourcePath: string;
   gantt: Array<{
     cost: CostType;
     label: 'Soft Cost' | 'Hard Cost';
@@ -295,6 +307,40 @@ export interface PtTrade {
   rfpSentDate: string;
   /** Days since the most recent bid activity (Bidding-view column). */
   daysSinceUpdate: number | null;
+}
+
+// P&P-parity surfaces (PR-B) ------------------------------------------------
+
+export interface PriorityItem {
+  kind: 'stale-rfp' | 'overdue-followup' | 'awarded-no-amount';
+  days: number;
+  project: string;
+  trade: string;
+  status: string;
+  url: string;
+}
+
+export interface TeamWorkloadRow {
+  name: string;
+  initials: string;
+  segments: Array<{ code: StatusCode; n: number }>;
+  total: number;
+  projectCount: number;
+}
+
+export interface BudgetStatusPanelRow {
+  code: BudgetStatusCode;
+  label: string;
+  count: number;
+}
+
+export interface GlanceTile {
+  folderId: string;
+  name: string;
+  awardedPct: number;
+  estimated: string;
+  biddableCount: number;
+  health: 'good' | 'mid' | 'low';
 }
 
 // ----------------------------------------------------------------------------
@@ -664,6 +710,13 @@ export function buildUnifiedPortfolio(input: {
     }
   }
 
+  // P&P-parity surfaces.
+  const priority = buildPriority(snapshots);
+  const teamWorkload = buildTeamWorkload(snapshots);
+  const budgetStatusPanel = buildBudgetStatusPanel(snapshots);
+  const atAGlance = buildAtAGlance(snapshots);
+  const sourcePath = `ClickUp · space ${CLICKUP_ACTIVE_PROJECTS_SPACE_ID} · ${snapshots.length} active project${snapshots.length === 1 ? '' : 's'}`;
+
   // Hero refresh string.
   const sec = Math.max(1, Math.floor((Date.now() - refreshedAt) / 1000));
   const refreshedAgo = sec < 90 ? `${sec}s ago` : `${Math.round(sec / 60)}m ago`;
@@ -694,6 +747,11 @@ export function buildUnifiedPortfolio(input: {
       newBudget: fmtUsd(pfNewBudget),
       tradeCount: pfTradeCount,
     },
+    priority,
+    teamWorkload,
+    budgetStatusPanel,
+    atAGlance,
+    sourcePath,
     gantt,
     ganttAxis,
     projects: projectTransforms,
@@ -1324,6 +1382,130 @@ function buildSubcontractorStats(snapshots: ProjectSnapshot[]): SubcontractorSta
     return b.totalBids - a.totalBids;
   });
   return out;
+}
+
+// ----------------------------------------------------------------------------
+// P&P-parity surfaces (PR-B)
+// ----------------------------------------------------------------------------
+
+// Weekday count between a date and now — for the SOP's "business days" SLAs.
+function businessDaysSince(date: string | null): number | null {
+  const ms = dateMsOf(date);
+  if (ms == null) return null;
+  const cur = new Date(ms);
+  const now = Date.now();
+  let days = 0;
+  while (cur.getTime() < now) {
+    cur.setDate(cur.getDate() + 1);
+    const d = cur.getDay();
+    if (d !== 0 && d !== 6) days += 1;
+  }
+  return days;
+}
+
+function buildPriority(snapshots: ProjectSnapshot[]): { headline: string; items: PriorityItem[] } {
+  const nameById = new Map(snapshots.map((s) => [s.folderId, s.folderName]));
+  const items: PriorityItem[] = [];
+  for (const s of snapshots) {
+    for (const b of s.biddingTasks) {
+      const project = nameById.get(s.folderId) ?? '';
+      const trade = b.trade ?? 'Unknown trade';
+      if (b.status === 'RFP Sent') {
+        const d = businessDaysSince(b.dateUpdated);
+        if (d != null && d > 5) {
+          items.push({ kind: 'stale-rfp', days: d, project, trade, status: 'RFP Sent', url: b.url });
+        }
+      } else if (b.status === 'Followed Up') {
+        const d = businessDaysSince(b.dateUpdated);
+        if (d != null && d > 3) {
+          items.push({ kind: 'overdue-followup', days: d, project, trade, status: 'Followed Up', url: b.url });
+        }
+      } else if (b.status === 'Awarded' && b.bidAmount == null) {
+        const d = businessDaysSince(b.awardDate ?? b.dateUpdated) ?? 0;
+        items.push({ kind: 'awarded-no-amount', days: d, project, trade, status: 'Awarded · no amount', url: b.url });
+      }
+    }
+  }
+  items.sort((a, b) => b.days - a.days);
+  const top = items.slice(0, 3);
+  let headline: string;
+  if (items.length === 0) {
+    headline = 'All clear — no stale bids or overdue follow-ups';
+  } else {
+    const avg = Math.round(items.reduce((sum, i) => sum + i.days, 0) / items.length);
+    headline = `${items.length} bid${items.length === 1 ? '' : 's'} need attention — avg ${avg} day${avg === 1 ? '' : 's'} waiting`;
+  }
+  return { headline, items: top };
+}
+
+const WORKLOAD_SEGMENT_ORDER: StatusCode[] = ['AW', 'LV', 'LP', 'BR', 'FU', 'RS', 'NR', 'ND', 'NS'];
+
+function buildTeamWorkload(snapshots: ProjectSnapshot[]): TeamWorkloadRow[] {
+  return TEAM.map((member) => {
+    const key = member.name.trim().toLowerCase();
+    const counts = new Map<StatusCode, number>();
+    const projects = new Set<string>();
+    let total = 0;
+    for (const s of snapshots) {
+      for (const b of s.biddingTasks) {
+        if (!b.assignees.some((a) => a.trim().toLowerCase() === key)) continue;
+        const code = STATUS_CODE[b.status] as StatusCode;
+        counts.set(code, (counts.get(code) ?? 0) + 1);
+        projects.add(s.folderId);
+        total += 1;
+      }
+    }
+    const segments = WORKLOAD_SEGMENT_ORDER
+      .filter((c) => (counts.get(c) ?? 0) > 0)
+      .map((c) => ({ code: c, n: counts.get(c)! }));
+    return {
+      name: member.name,
+      initials: member.initials,
+      segments,
+      total,
+      projectCount: projects.size,
+    };
+  }).sort((a, b) => b.total - a.total);
+}
+
+function buildBudgetStatusPanel(snapshots: ProjectSnapshot[]): BudgetStatusPanelRow[] {
+  const counts: Record<BudgetStatusCode, number> = { TB: 0, OB: 0, BS: 0, BC: 0 };
+  for (const s of snapshots) {
+    for (const bt of s.budgetTasks) {
+      const code = budgetStatusCodeFromString(bt.budgetStatus);
+      if (code) counts[code] += 1;
+    }
+  }
+  return (Object.keys(BUDGET_STATUS_LABEL) as BudgetStatusCode[]).map((code) => ({
+    code,
+    label: BUDGET_STATUS_LABEL[code],
+    count: counts[code],
+  }));
+}
+
+function buildAtAGlance(snapshots: ProjectSnapshot[]): GlanceTile[] {
+  return snapshots
+    .map((s) => {
+      const biddable = s.budgetTasks.filter((bt) => bt.tradeType === 'Biddable');
+      const awardedTradeKeys = new Set(
+        s.biddingTasks
+          .filter((b) => b.status === 'Awarded' && b.trade)
+          .map((b) => tradeKey(b.trade as string))
+      );
+      const awarded = biddable.filter((bt) => awardedTradeKeys.has(tradeKey(bt.trade))).length;
+      const awardedPct = biddable.length > 0 ? Math.round((awarded / biddable.length) * 100) : 0;
+      const estimated = s.budgetTasks.reduce((sum, bt) => sum + (bt.estimatedBudget ?? 0), 0);
+      const health: GlanceTile['health'] = awardedPct >= 50 ? 'good' : awardedPct >= 10 ? 'mid' : 'low';
+      return {
+        folderId: s.folderId,
+        name: s.folderName,
+        awardedPct,
+        estimated: fmtUsd(estimated),
+        biddableCount: biddable.length,
+        health,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // Re-export the BIDDING_STATUSES literal so callers don't need to dive into ./clickup/types.
